@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2><i class="fas fa-chart-line"></i> 学習ダッシュボード</h2>
+    <p style="margin: 1rem 0; color: #666;">あなたの学習進捗と成績を確認できます。</p>
+    
+    {% if stats.total_questions > 0 %}
+    <!-- 全体統計 -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">{{ stats.total_questions }}</div>
+            <div class="stat-label"><i class="fas fa-question-circle"></i> 総問題数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ stats.correct_answers }}</div>
+            <div class="stat-label"><i class="fas fa-check-circle"></i> 正解数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format((stats.correct_answers / stats.total_questions * 100) if stats.total_questions > 0 else 0) }}%</div>
+            <div class="stat-label"><i class="fas fa-percentage"></i> 正答率</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ stats.categories|length }}</div>
+            <div class="stat-label"><i class="fas fa-tags"></i> 学習カテゴリ</div>
+        </div>
+    </div>
+    
+    <!-- カテゴリ別成績 -->
+    {% if stats.categories %}
+    <div style="margin-top: 3rem;">
+        <h3><i class="fas fa-chart-bar"></i> カテゴリ別成績</h3>
+        <div class="category-stats">
+            {% for category, data in stats.categories.items() %}
+            <div class="category-item">
+                <div class="category-header">
+                    <h4>{{ category }}</h4>
+                    <span class="category-score">{{ data.correct }}/{{ data.total }} ({{ "%.1f"|format((data.correct / data.total * 100) if data.total > 0 else 0) }}%)</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ (data.correct / data.total * 100) if data.total > 0 else 0 }}%"></div>
+                </div>
+                <div class="category-details">
+                    <span class="correct-count">正解: {{ data.correct }}</span>
+                    <span class="total-count">総問題: {{ data.total }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- 最近の結果 -->
+    {% if stats.history %}
+    <div style="margin-top: 3rem;">
+        <h3><i class="fas fa-history"></i> 最近の結果</h3>
+        <div class="history-container">
+            {% for result in stats.history[-10:]|reverse %}
+            <div class="history-item {{ 'correct' if result.is_correct else 'incorrect' }}">
+                <div class="history-header">
+                    <div class="history-status">
+                        {% if result.is_correct %}
+                        <i class="fas fa-check-circle"></i> 正解
+                        {% else %}
+                        <i class="fas fa-times-circle"></i> 不正解
+                        {% endif %}
+                    </div>
+                    <div class="history-category">{{ result.category }}</div>
+                </div>
+                <div class="history-question">{{ result.question[:100] }}{% if result.question|length > 100 %}...{% endif %}</div>
+                <div class="history-timestamp">{{ result.timestamp[:19] }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if stats.history|length > 10 %}
+        <p style="text-align: center; margin-top: 1rem; color: #666; font-size: 0.9rem;">
+            最近10件の結果を表示中 (全{{ stats.history|length }}件)
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- アクションボタン -->
+    <div style="text-align: center; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #eee;">
+        <a href="{{ url_for('quiz') }}" class="btn" style="font-size: 1.1rem; padding: 0.8rem 2rem;">
+            <i class="fas fa-play"></i> 続けて練習する
+        </a>
+        <button id="reset-stats-btn" class="btn btn-danger" style="font-size: 1.1rem; padding: 0.8rem 2rem; margin-left: 1rem;" onclick="confirmReset()">
+            <i class="fas fa-trash-alt"></i> 統計をリセット
+        </button>
+    </div>
+    
+    {% else %}
+    <!-- データがない場合 -->
+    <div style="text-align: center; padding: 3rem;">
+        <i class="fas fa-chart-bar" style="font-size: 4rem; color: #bdc3c7; margin-bottom: 1rem;"></i>
+        <h3 style="color: #7f8c8d; margin-bottom: 1rem;">まだデータがありません</h3>
+        <p style="color: #95a5a6; margin-bottom: 2rem;">クイズを始めて成績を記録しましょう！</p>
+        <a href="{{ url_for('quiz') }}" class="btn" style="font-size: 1.2rem; padding: 1rem 2rem;">
+            <i class="fas fa-play"></i> 最初のクイズを始める
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.category-stats {
+    margin-top: 1.5rem;
+}
+
+.category-item {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    border-left: 4px solid #3498db;
+}
+
+.category-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.category-header h4 {
+    margin: 0;
+    color: #2c3e50;
+}
+
+.category-score {
+    font-weight: bold;
+    color: #7f8c8d;
+}
+
+.progress-bar {
+    background: #ecf0f1;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+    background: linear-gradient(90deg, #2ecc71, #27ae60);
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.category-details {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+}
+
+.history-container {
+    margin-top: 1.5rem;
+}
+
+.history-item {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.8rem;
+    border-left: 4px solid #bdc3c7;
+    transition: all 0.2s ease;
+}
+
+.history-item:hover {
+    transform: translateX(5px);
+}
+
+.history-item.correct {
+    border-left-color: #27ae60;
+}
+
+.history-item.incorrect {
+    border-left-color: #e74c3c;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.history-status {
+    font-weight: bold;
+}
+
+.history-status.correct {
+    color: #27ae60;
+}
+
+.history-status.incorrect {
+    color: #e74c3c;
+}
+
+.history-category {
+    background: #ecf0f1;
+    color: #7f8c8d;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+}
+
+.history-question {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+}
+
+.history-timestamp {
+    font-size: 0.8rem;
+    color: #95a5a6;
+    text-align: right;
+}
+
+@media (max-width: 768px) {
+    .category-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .category-details {
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+    
+    .history-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmReset() {
+    if (confirm('本当にすべての統計をリセットしますか？\nこの操作は取り消すことができません。')) {
+        resetStats();
+    }
+}
+
+function resetStats() {
+    fetch('/api/stats', {
+        method: 'DELETE'
+    })
+    .then(response => {
+        if (response.ok) {
+            alert('統計をリセットしました');
+            location.reload();
+        } else {
+            alert('リセットに失敗しました');
+        }
+    })
+    .catch(error => {
+        console.error('エラー:', error);
+        alert('リセットに失敗しました');
+    });
+}
+
+// チャートのアニメーション
+window.addEventListener('DOMContentLoaded', function() {
+    const progressBars = document.querySelectorAll('.progress-fill');
+    
+    setTimeout(() => {
+        progressBars.forEach(bar => {
+            const width = bar.style.width;
+            bar.style.width = '0%';
+            setTimeout(() => {
+                bar.style.width = width;
+            }, 100);
+        });
+    }, 200);
+});
+</script>
+{% endblock %}
