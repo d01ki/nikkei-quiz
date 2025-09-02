@@ -167,6 +167,16 @@ def dashboard():
         print(f"❌ ダッシュボードエラー: {e}")
         return render_template('error.html', message='ダッシュボードの読み込みに失敗しました')
 
+@app.route('/history')
+def history():
+    """履歴ページ"""
+    try:
+        stats = load_user_stats()
+        return render_template('history.html', stats=stats)
+    except Exception as e:
+        print(f"❌ 履歴ページエラー: {e}")
+        return render_template('error.html', message='履歴ページの読み込みに失敗しました')
+
 @app.route('/api/get_question')
 def get_question():
     """ランダムな問題を取得"""
@@ -236,12 +246,14 @@ def submit_answer():
             'category': category,
             'user_answer': user_answer,
             'correct_answer': correct_answer,
+            'options': current_question['options'],
+            'explanation': current_question.get('explanation', ''),
             'is_correct': is_correct,
             'timestamp': datetime.now().isoformat()
         })
         
-        # 最近20件のみ保持
-        stats['history'] = stats['history'][-20:]
+        # 最近50件のみ保持
+        stats['history'] = stats['history'][-50:]
         save_user_stats(stats)
         
         return jsonify({
