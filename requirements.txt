@@ -9,5 +9,7 @@ Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.2
 Flask-WTF==1.1.1
 WTForms==3.0.1
-psycopg2-binary==2.9.7
 bcrypt==4.0.1
+
+# PostgreSQL (本番環境のみ)
+psycopg2-binary==2.9.7; sys_platform != "win32"
