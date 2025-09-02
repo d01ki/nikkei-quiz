@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}エラー - 日経クイズ練習アプリ{% endblock %}
+
+{% block content %}
+<div class="card text-center">
+    <div style="padding: 3rem;">
+        <i class="fas fa-exclamation-triangle" style="font-size: 5rem; color: #e67e22; margin-bottom: 2rem;"></i>
+        <h1 style="color: #2c3e50; margin-bottom: 1rem; font-size: 2rem;">エラーが発生しました</h1>
+        
+        {% if message %}
+        <p style="color: #7f8c8d; font-size: 1.1rem; margin-bottom: 2rem;">{{ message }}</p>
+        {% else %}
+        <p style="color: #7f8c8d; font-size: 1.1rem; margin-bottom: 2rem;">申し訳ございません。予期しないエラーが発生しました。</p>
+        {% endif %}
+
+        <div style="margin-top: 3rem;">
+            <a href="{{ url_for('index') }}" class="btn btn-large" style="margin-right: 1rem;">
+                <i class="fas fa-home"></i>
+                ホームに戻る
+            </a>
+            <button onclick="history.back()" class="btn" style="background: #95a5a6;">
+                <i class="fas fa-arrow-left"></i>
+                前のページ
+            </button>
+        </div>
+
+        <div style="margin-top: 2rem; padding: 1.5rem; background: #f8f9fa; border-radius: 10px;">
+            <h3 style="color: #2c3e50; margin-bottom: 1rem;">解決方法：</h3>
+            <ul style="text-align: left; color: #7f8c8d; max-width: 400px; margin: 0 auto;">
+                <li>ページを再読み込みしてください</li>
+                <li>ブラウザのキャッシュをクリアしてください</li>
+                <li>しばらく時間をおいてから再度お試しください</li>
+                <li>問題が続く場合は管理者にお問い合わせください</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
