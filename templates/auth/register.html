@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}新規登録 - 日経クイズ練習アプリ{% endblock %}
+
+{% block content %}
+<div class="card auth-card">
+    <div class="auth-header">
+        <h1><i class="fas fa-user-plus"></i> 新規登録</h1>
+        <p>アカウントを作成して学習を始めましょう</p>
+    </div>
+
+    <form method="POST">
+        {{ form.hidden_tag() }}
+        
+        <div class="form-group">
+            {{ form.username.label(class="form-label") }}
+            {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else ""), placeholder="例: yamada_taro") }}
+            {% if form.username.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.username.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <small class="form-text">3文字以上20文字以下で入力してください</small>
+        </div>
+
+        <div class="form-group">
+            {{ form.email.label(class="form-label") }}
+            {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="例: yamada@example.com") }}
+            {% if form.email.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.email.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            {{ form.display_name.label(class="form-label") }}
+            {{ form.display_name(class="form-control" + (" is-invalid" if form.display_name.errors else ""), placeholder="例: 山田太郎") }}
+            {% if form.display_name.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.display_name.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <small class="form-text">空欄の場合はユーザー名が使用されます</small>
+        </div>
+
+        <div class="form-group">
+            {{ form.password.label(class="form-label") }}
+            {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else "")) }}
+            {% if form.password.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.password.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <small class="form-text">6文字以上で入力してください</small>
+        </div>
+
+        <div class="form-group">
+            {{ form.password2.label(class="form-label") }}
+            {{ form.password2(class="form-control" + (" is-invalid" if form.password2.errors else "")) }}
+            {% if form.password2.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.password2.errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            {{ form.submit(class="btn btn-success btn-large auth-btn") }}
+        </div>
+    </form>
+
+    <div class="auth-footer">
+        <p>既にアカウントをお持ちですか？ <a href="{{ url_for('login') }}">ログイン</a></p>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .auth-card {
+        max-width: 450px;
+        margin: 2rem auto;
+        padding: 3rem;
+    }
+
+    .auth-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .auth-header h1 {
+        color: #2c3e50;
+        margin-bottom: 0.5rem;
+        font-size: 2rem;
+    }
+
+    .auth-header p {
+        color: #7f8c8d;
+        margin-bottom: 0;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        background: #ffffff;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #3498db;
+        box-shadow: 0 0 0 0.2rem rgba(52, 152, 219, 0.25);
+    }
+
+    .form-control.is-invalid {
+        border-color: #e74c3c;
+    }
+
+    .invalid-feedback {
+        display: block;
+        width: 100%;
+        margin-top: 0.25rem;
+        font-size: 0.875rem;
+        color: #e74c3c;
+    }
+
+    .form-text {
+        margin-top: 0.25rem;
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+
+    .auth-btn {
+        width: 100%;
+        padding: 0.875rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    .auth-footer {
+        text-align: center;
+        margin-top: 2rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #e9ecef;
+    }
+
+    .auth-footer a {
+        color: #3498db;
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .auth-footer a:hover {
+        text-decoration: underline;
+    }
+
+    /* パスワード強度インジケータ */
+    .password-strength {
+        margin-top: 0.5rem;
+        height: 4px;
+        background: #e9ecef;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    .password-strength-bar {
+        height: 100%;
+        transition: all 0.3s ease;
+        width: 0%;
+    }
+
+    .strength-weak { background: #e74c3c; }
+    .strength-fair { background: #f39c12; }
+    .strength-good { background: #f1c40f; }
+    .strength-strong { background: #27ae60; }
+
+    @media (max-width: 480px) {
+        .auth-card {
+            margin: 1rem;
+            padding: 2rem 1.5rem;
+        }
+
+        .auth-header h1 {
+            font-size: 1.75rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const passwordField = document.getElementById('password');
+        const confirmField = document.getElementById('password2');
+        
+        // パスワード強度チェック
+        if (passwordField) {
+            const strengthBar = document.createElement('div');
+            strengthBar.className = 'password-strength';
+            strengthBar.innerHTML = '<div class="password-strength-bar"></div>';
+            passwordField.parentNode.appendChild(strengthBar);
+            
+            passwordField.addEventListener('input', function() {
+                const password = this.value;
+                const bar = strengthBar.querySelector('.password-strength-bar');
+                
+                let strength = 0;
+                if (password.length >= 6) strength++;
+                if (password.match(/[a-z]/)) strength++;
+                if (password.match(/[A-Z]/)) strength++;
+                if (password.match(/[0-9]/)) strength++;
+                if (password.match(/[^a-zA-Z0-9]/)) strength++;
+                
+                const classes = ['strength-weak', 'strength-fair', 'strength-good', 'strength-strong'];
+                bar.className = 'password-strength-bar';
+                
+                if (strength > 0) {
+                    bar.style.width = (strength * 20) + '%';
+                    if (strength >= 4) bar.classList.add('strength-strong');
+                    else if (strength >= 3) bar.classList.add('strength-good');
+                    else if (strength >= 2) bar.classList.add('strength-fair');
+                    else bar.classList.add('strength-weak');
+                } else {
+                    bar.style.width = '0%';
+                }
+            });
+        }
+        
+        // パスワード確認のリアルタイムチェック
+        if (confirmField && passwordField) {
+            confirmField.addEventListener('input', function() {
+                if (this.value !== passwordField.value) {
+                    this.classList.add('is-invalid');
+                } else {
+                    this.classList.remove('is-invalid');
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}
