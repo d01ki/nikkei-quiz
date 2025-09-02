@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'nikkei_quiz_secret_key_2024'
+app.secret_key = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
 # サンプル問題データ（data/questions.jsonがない場合のフォールバック）
 SAMPLE_QUESTIONS = [
@@ -309,5 +309,8 @@ if __name__ == '__main__':
     print("⏹️ 停止するには Ctrl+C を押してください")
     print("=" * 50)
     
-    # 本番環境では debug=False にしてください
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # 本番環境での設定
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') != 'production'
+    
+    app.run(debug=debug, host='0.0.0.0', port=port)
