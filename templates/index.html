@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}ホーム - 日経クイズ練習アプリ{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="text-center">
+        <h1 style="color: #2c3e50; margin-bottom: 1rem; font-size: 2.5rem;">
+            <i class="fas fa-graduation-cap" style="color: #3498db;"></i>
+            日経テスト練習アプリ
+        </h1>
+        <p style="color: #7f8c8d; font-size: 1.1rem; margin-bottom: 3rem;">
+            日経テストの対策問題で実力アップを目指しましょう
+        </p>
+    </div>
+
+    {% if stats.total_questions > 0 %}
+    <!-- 学習サマリー -->
+    <div style="background: linear-gradient(145deg, #f1f2f6, #ddd6fe); padding: 2rem; border-radius: 15px; margin-bottom: 3rem;">
+        <h2 style="color: #2c3e50; margin-bottom: 1.5rem; text-align: center;">
+            <i class="fas fa-trophy" style="color: #f39c12;"></i>
+            あなたの学習状況
+        </h2>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.total_questions }}</div>
+                <div class="stat-label">
+                    <i class="fas fa-question-circle"></i>
+                    挑戦した問題数
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.correct_answers }}</div>
+                <div class="stat-label">
+                    <i class="fas fa-check-circle"></i>
+                    正解数
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ "%.1f"|format((stats.correct_answers / stats.total_questions * 100) if stats.total_questions > 0 else 0) }}%</div>
+                <div class="stat-label">
+                    <i class="fas fa-percentage"></i>
+                    正答率
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.categories|length }}</div>
+                <div class="stat-label">
+                    <i class="fas fa-tags"></i>
+                    学習済みジャンル
+                </div>
+            </div>
+        </div>
+
+        <!-- カテゴリ別パフォーマンス（トップ3） -->
+        {% if stats.categories %}
+        <div style="margin-top: 2rem;">
+            <h3 style="color: #2c3e50; margin-bottom: 1rem; text-align: center;">
+                <i class="fas fa-star"></i> ジャンル別成績（上位3つ）
+            </h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                {% for category, data in (stats.categories.items() | list)[:3] %}
+                <div style="background: rgba(255, 255, 255, 0.8); padding: 1rem; border-radius: 10px; text-align: center;">
+                    <div style="font-weight: 600; color: #2c3e50; margin-bottom: 0.5rem;">{{ category }}</div>
+                    <div style="font-size: 1.2rem; color: #3498db; font-weight: 700;">
+                        {{ "%.0f"|format((data.correct / data.total * 100) if data.total > 0 else 0) }}%
+                    </div>
+                    <div style="font-size: 0.9rem; color: #7f8c8d;">{{ data.correct }}/{{ data.total }}問正解</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- メインアクション -->
+    <div class="action-grid">
+        <a href="{{ url_for('quiz') }}" class="action-card">
+            <div class="action-icon">
+                <i class="fas fa-play-circle"></i>
+            </div>
+            <div class="action-title">問題を解く</div>
+            <div class="action-description">
+                ランダムに問題を出題します<br>
+                知識を試して実力を伸ばしましょう
+            </div>
+        </a>
+
+        <a href="{{ url_for('dashboard') }}" class="action-card">
+            <div class="action-icon">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <div class="action-title">ダッシュボード</div>
+            <div class="action-description">
+                詳細な学習分析と<br>
+                カテゴリ別成績を確認
+            </div>
+        </a>
+
+        <a href="{{ url_for('history') }}" class="action-card">
+            <div class="action-icon">
+                <i class="fas fa-history"></i>
+            </div>
+            <div class="action-title">解答履歴</div>
+            <div class="action-description">
+                過去に解いた問題と<br>
+                解答を振り返る
+            </div>
+        </a>
+    </div>
+
+    {% if stats.total_questions == 0 %}
+    <!-- 初回ユーザー向けメッセージ -->
+    <div class="text-center mt-3">
+        <div style="background: linear-gradient(145deg, #ecf0f1, #bdc3c7); padding: 3rem; border-radius: 20px; margin-bottom: 2rem;">
+            <i class="fas fa-rocket" style="font-size: 4rem; color: #3498db; margin-bottom: 1rem;"></i>
+            <h2 style="color: #2c3e50; margin-bottom: 1rem;">学習を始めましょう！</h2>
+            <p style="color: #7f8c8d; margin-bottom: 2rem; font-size: 1.1rem;">
+                日経テストの実力向上のため、まずは問題に挑戦してみてください
+            </p>
+            <a href="{{ url_for('quiz') }}" class="btn btn-success btn-large">
+                <i class="fas fa-play"></i>
+                最初の問題を始める
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <!-- 継続ユーザー向けクイックアクション -->
+    <div class="text-center mt-2">
+        <a href="{{ url_for('quiz') }}" class="btn btn-success btn-large">
+            <i class="fas fa-brain"></i>
+            続けて問題を解く
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- アプリ情報 -->
+    <div style="background: rgba(255, 255, 255, 0.7); border-radius: 15px; padding: 2rem; margin-top: 3rem;">
+        <h3 style="color: #2c3e50; margin-bottom: 1rem; text-align: center;">
+            <i class="fas fa-info-circle"></i> アプリについて
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; text-align: center;">
+            <div>
+                <i class="fas fa-book" style="font-size: 2rem; color: #3498db; margin-bottom: 0.5rem;"></i>
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">豊富な問題</h4>
+                <p style="color: #7f8c8d; font-size: 0.9rem;">日経テスト公式問題集から厳選した良問</p>
+            </div>
+            <div>
+                <i class="fas fa-chart-pie" style="font-size: 2rem; color: #2ecc71; margin-bottom: 0.5rem;"></i>
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">詳細分析</h4>
+                <p style="color: #7f8c8d; font-size: 0.9rem;">カテゴリ別の成績と弱点を可視化</p>
+            </div>
+            <div>
+                <i class="fas fa-target" style="font-size: 2rem; color: #e74c3c; margin-bottom: 0.5rem;"></i>
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">効率学習</h4>
+                <p style="color: #7f8c8d; font-size: 0.9rem;">間違えた問題の解説で理解を深める</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ページロード時のアニメーション
+    document.addEventListener('DOMContentLoaded', function() {
+        const cards = document.querySelectorAll('.action-card');
+        cards.forEach((card, index) => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+            setTimeout(() => {
+                card.style.transition = 'all 0.6s ease';
+                card.style.opacity = '1';
+                card.style.transform = 'translateY(0)';
+            }, index * 200);
+        });
+    });
+</script>
+{% endblock %}
