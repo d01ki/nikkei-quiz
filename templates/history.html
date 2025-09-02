@@ -75,12 +75,13 @@
                 {% if result.options %}
                 <div class="history-options">
                     {% for option in result.options %}
+                    {% set option_letter = ['A', 'B', 'C', 'D'][loop.index0] %}
                     <div class="history-option 
                         {% if loop.index0 == result.correct_answer %}correct-answer{% endif %}
                         {% if loop.index0 == result.user_answer and not result.is_correct %}user-wrong-answer{% endif %}
                         {% if loop.index0 == result.user_answer and result.is_correct %}user-correct-answer{% endif %}
                     ">
-                        <span class="option-letter">{{ (65 + loop.index0)|chr }}</span>
+                        <span class="option-letter">{{ option_letter }}</span>
                         <span class="option-text">{{ option }}</span>
                         {% if loop.index0 == result.correct_answer %}
                         <i class="fas fa-check" style="color: #27ae60; margin-left: auto;"></i>
