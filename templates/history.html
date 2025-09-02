@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+
+{% block title %}解答履歴 - 日経クイズ練習アプリ{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1 style="color: #2c3e50; margin-bottom: 1rem; text-align: center;">
+        <i class="fas fa-history" style="color: #3498db;"></i>
+        解答履歴
+    </h1>
+    <p style="color: #7f8c8d; text-align: center; margin-bottom: 2rem;">
+        過去に解いた問題と解答を振り返って復習しましょう
+    </p>
+    
+    {% if stats.history %}
+    <!-- フィルター機能 -->
+    <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 15px; margin-bottom: 2rem;">
+        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <label style="font-weight: 600; color: #2c3e50;">フィルター:</label>
+            <select id="filter-result" onchange="filterHistory()" style="padding: 0.5rem; border-radius: 8px; border: 1px solid #ddd;">
+                <option value="all">すべて</option>
+                <option value="correct">正解のみ</option>
+                <option value="incorrect">不正解のみ</option>
+            </select>
+            <select id="filter-category" onchange="filterHistory()" style="padding: 0.5rem; border-radius: 8px; border: 1px solid #ddd;">
+                <option value="all">全カテゴリ</option>
+                {% for category in stats.categories.keys() %}
+                <option value="{{ category }}">{{ category }}</option>
+                {% endfor %}
+            </select>
+            <button onclick="clearFilters()" class="btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+                <i class="fas fa-refresh"></i>
+                リセット
+            </button>
+        </div>
+    </div>
+
+    <!-- 履歴サマリー -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div class="stat-card">
+            <div class="stat-number">{{ stats.history|length }}</div>
+            <div class="stat-label"><i class="fas fa-list"></i> 総問題数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ stats.history|selectattr("is_correct")|list|length }}</div>
+            <div class="stat-label"><i class="fas fa-check"></i> 正解数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ "%.1f"|format((stats.history|selectattr("is_correct")|list|length / stats.history|length * 100) if stats.history|length > 0 else 0) }}%</div>
+            <div class="stat-label"><i class="fas fa-percentage"></i> 正答率</div>
+        </div>
+    </div>
+
+    <!-- 履歴リスト -->
+    <div id="history-list">
+        {% for result in stats.history|reverse %}
+        <div class="history-item" data-result="{{ 'correct' if result.is_correct else 'incorrect' }}" data-category="{{ result.category }}">
+            <div class="history-header">
+                <div class="history-status {{ 'correct' if result.is_correct else 'incorrect' }}">
+                    {% if result.is_correct %}
+                    <i class="fas fa-check-circle"></i> 正解
+                    {% else %}
+                    <i class="fas fa-times-circle"></i> 不正解
+                    {% endif %}
+                </div>
+                <div class="history-meta">
+                    <span class="history-category">{{ result.category }}</span>
+                    <span class="history-timestamp">{{ result.timestamp[:16].replace('T', ' ') }}</span>
+                </div>
+            </div>
+            
+            <div class="history-question">
+                <h3 style="color: #2c3e50; margin-bottom: 1rem; font-size: 1.1rem;">{{ result.question }}</h3>
+                
+                {% if result.options %}
+                <div class="history-options">
+                    {% for option in result.options %}
+                    <div class="history-option 
+                        {% if loop.index0 == result.correct_answer %}correct-answer{% endif %}
+                        {% if loop.index0 == result.user_answer and not result.is_correct %}user-wrong-answer{% endif %}
+                        {% if loop.index0 == result.user_answer and result.is_correct %}user-correct-answer{% endif %}
+                    ">
+                        <span class="option-letter">{{ (65 + loop.index0)|chr }}</span>
+                        <span class="option-text">{{ option }}</span>
+                        {% if loop.index0 == result.correct_answer %}
+                        <i class="fas fa-check" style="color: #27ae60; margin-left: auto;"></i>
+                        {% elif loop.index0 == result.user_answer and not result.is_correct %}
+                        <i class="fas fa-times" style="color: #e74c3c; margin-left: auto;"></i>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                {% if result.explanation %}
+                <div class="explanation-card" style="margin-top: 1rem;">
+                    <div class="explanation-title">
+                        <i class="fas fa-lightbulb"></i>
+                        解説
+                    </div>
+                    <p style="color: #2c3e50; line-height: 1.6;">{{ result.explanation }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <!-- 履歴がない場合 -->
+    <div class="text-center" style="padding: 3rem;">
+        <i class="fas fa-clipboard-list" style="font-size: 4rem; color: #bdc3c7; margin-bottom: 1rem;"></i>
+        <h3 style="color: #7f8c8d; margin-bottom: 1rem;">まだ履歴がありません</h3>
+        <p style="color: #95a5a6; margin-bottom: 2rem;">問題を解いて履歴を作成しましょう！</p>
+        <a href="{{ url_for('quiz') }}" class="btn btn-success btn-large">
+            <i class="fas fa-play"></i>
+            最初の問題を始める
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .history-item {
+        background: linear-gradient(145deg, #ffffff, #f8f9fa);
+        border: 1px solid #e9ecef;
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        transition: all 0.3s ease;
+        animation: slideInRight 0.5s ease-out;
+    }
+
+    .history-item:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px rgba(52, 152, 219, 0.1);
+    }
+
+    @keyframes slideInRight {
+        from {
+            opacity: 0;
+            transform: translateX(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    .history-item[data-result="correct"] {
+        border-left: 4px solid #27ae60;
+    }
+
+    .history-item[data-result="incorrect"] {
+        border-left: 4px solid #e74c3c;
+    }
+
+    .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .history-status {
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .history-status.correct {
+        color: #27ae60;
+    }
+
+    .history-status.incorrect {
+        color: #e74c3c;
+    }
+
+    .history-meta {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .history-category {
+        background: #ecf0f1;
+        color: #2c3e50;
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .history-timestamp {
+        font-size: 0.9rem;
+        color: #7f8c8d;
+    }
+
+    .history-options {
+        margin: 1rem 0;
+    }
+
+    .history-option {
+        display: flex;
+        align-items: center;
+        padding: 0.8rem;
+        margin-bottom: 0.5rem;
+        border-radius: 10px;
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        transition: all 0.2s ease;
+    }
+
+    .history-option.correct-answer {
+        background: linear-gradient(145deg, #d5f4e6, #a8e6cf);
+        border-color: #27ae60;
+    }
+
+    .history-option.user-wrong-answer {
+        background: linear-gradient(145deg, #fde8e8, #fbb6b6);
+        border-color: #e74c3c;
+    }
+
+    .history-option.user-correct-answer {
+        background: linear-gradient(145deg, #d5f4e6, #a8e6cf);
+        border-color: #27ae60;
+        font-weight: 600;
+    }
+
+    .history-option .option-letter {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 25px;
+        height: 25px;
+        background: #7f8c8d;
+        color: white;
+        border-radius: 50%;
+        font-weight: 600;
+        margin-right: 1rem;
+        flex-shrink: 0;
+        font-size: 0.9rem;
+    }
+
+    .history-option.correct-answer .option-letter {
+        background: #27ae60;
+    }
+
+    .history-option.user-wrong-answer .option-letter {
+        background: #e74c3c;
+    }
+
+    .explanation-card {
+        background: rgba(52, 152, 219, 0.1);
+        border: 1px solid rgba(52, 152, 219, 0.2);
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+
+    .explanation-title {
+        color: #2c3e50;
+        font-weight: 600;
+        margin-bottom: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* フィルター結果 */
+    .history-item.filtered-out {
+        display: none;
+    }
+
+    .no-results {
+        text-align: center;
+        padding: 3rem;
+        color: #7f8c8d;
+    }
+
+    /* モバイル対応 */
+    @media (max-width: 768px) {
+        .history-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .history-meta {
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        .history-option {
+            padding: 0.6rem;
+        }
+
+        .history-option .option-letter {
+            width: 22px;
+            height: 22px;
+            margin-right: 0.8rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function filterHistory() {
+        const resultFilter = document.getElementById('filter-result').value;
+        const categoryFilter = document.getElementById('filter-category').value;
+        const historyItems = document.querySelectorAll('.history-item');
+        let visibleCount = 0;
+
+        historyItems.forEach(item => {
+            const result = item.getAttribute('data-result');
+            const category = item.getAttribute('data-category');
+            
+            let showItem = true;
+            
+            // 結果でフィルター
+            if (resultFilter !== 'all' && result !== resultFilter) {
+                showItem = false;
+            }
+            
+            // カテゴリでフィルター
+            if (categoryFilter !== 'all' && category !== categoryFilter) {
+                showItem = false;
+            }
+            
+            if (showItem) {
+                item.classList.remove('filtered-out');
+                visibleCount++;
+            } else {
+                item.classList.add('filtered-out');
+            }
+        });
+
+        // 結果が見つからない場合のメッセージ
+        let noResultsMsg = document.getElementById('no-results-message');
+        if (visibleCount === 0) {
+            if (!noResultsMsg) {
+                noResultsMsg = document.createElement('div');
+                noResultsMsg.id = 'no-results-message';
+                noResultsMsg.className = 'no-results';
+                noResultsMsg.innerHTML = `
+                    <i class="fas fa-search" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                    <h3>条件に一致する履歴が見つかりません</h3>
+                    <p>フィルター条件を変更してください</p>
+                `;
+                document.getElementById('history-list').appendChild(noResultsMsg);
+            }
+        } else if (noResultsMsg) {
+            noResultsMsg.remove();
+        }
+    }
+
+    function clearFilters() {
+        document.getElementById('filter-result').value = 'all';
+        document.getElementById('filter-category').value = 'all';
+        filterHistory();
+    }
+
+    // ページロード時のアニメーション
+    document.addEventListener('DOMContentLoaded', function() {
+        const historyItems = document.querySelectorAll('.history-item');
+        historyItems.forEach((item, index) => {
+            item.style.animationDelay = (index * 100) + 'ms';
+        });
+    });
+</script>
+{% endblock %}
