@@ -68,6 +68,10 @@ def init_database():
         LoginForm = _LoginForm
         RegisterForm = _RegisterForm
         
+        # アプリがまだ初期化されていない場合のみ初期化
+        if not hasattr(db, 'app') or db.app is None:
+            db.init_app(app)
+        
         # 実際のuser_loaderで上書き
         @login_manager.user_loader
         def load_user(user_id):
