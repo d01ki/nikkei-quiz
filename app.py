@@ -12,109 +12,54 @@ app = Flask(__name__)
 # 設定
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
-# データベース設定
-database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"✅ データベースURL設定完了")
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
-    print("⚠️ SQLiteデータベースを使用します")
-
+# SQLiteデータベース設定（PostgreSQLを使用しない）
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,
-    'pool_recycle': 300,
-}
+print("✅ SQLiteデータベースを使用します")
 
-# グローバル変数の初期化
-db = None
-User = None
-QuizResult = None
-UserStats = None
-LoginForm = None
-RegisterForm = None
+# モジュールのインポートと初期化
+try:
+    import models
+    import forms
+    print("✅ モジュールのインポートに成功")
+    
+    # グローバル変数に代入
+    db = models.db
+    User = models.User
+    QuizResult = models.QuizResult
+    UserStats = models.UserStats
+    LoginForm = forms.LoginForm
+    RegisterForm = forms.RegisterForm
+    
+    # SQLAlchemyの初期化
+    db.init_app(app)
+    print("✅ SQLAlchemyの初期化に成功")
+    
+    # データベーステーブルを作成
+    with app.app_context():
+        db.create_all()
+        print("✅ データベーステーブルを作成しました")
+    
+    DB_INITIALIZED = True
+    print("✅ データベース初期化完了")
+    
+except Exception as e:
+    print(f"❌ データベース初期化に失敗: {e}")
+    import traceback
+    traceback.print_exc()
+    DB_INITIALIZED = False
+    db = None
+    User = None
+    QuizResult = None
+    UserStats = None
+    LoginForm = None
+    RegisterForm = None
 
 # Flask-Loginの初期化
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
-
-DB_INITIALIZED = False
-
-def init_database():
-    """データベース関連の初期化"""
-    global db, User, QuizResult, UserStats, LoginForm, RegisterForm, DB_INITIALIZED
-    
-    if DB_INITIALIZED:
-        return True
-        
-    try:
-        print("🔍 データベース初期化を開始...")
-        print(f"DATABASE_URL存在: {'あり' if database_url else 'なし'}")
-        
-        # モジュールのインポート
-        try:
-            import models
-            import forms
-            print("✅ モジュールのインポートに成功")
-        except ImportError as e:
-            print(f"❌ モジュールインポートエラー: {e}")
-            return False
-        
-        # グローバル変数に代入
-        db = models.db
-        User = models.User
-        QuizResult = models.QuizResult
-        UserStats = models.UserStats
-        LoginForm = forms.LoginForm
-        RegisterForm = forms.RegisterForm
-        
-        # SQLAlchemyの初期化 - 強制的に再初期化
-        try:
-            # 既存のSQLAlchemyインスタンスをクリア
-            if hasattr(app, 'extensions') and 'sqlalchemy' in app.extensions:
-                del app.extensions['sqlalchemy']
-                print("🔄 既存のSQLAlchemy拡張をクリア")
-            
-            # 新しくSQLAlchemyを初期化
-            db.init_app(app)
-            print("✅ SQLAlchemyの初期化に成功")
-            
-        except Exception as e:
-            print(f"❌ SQLAlchemy初期化エラー: {e}")
-            return False
-        
-        # アプリケーションコンテキスト内でテーブル作成
-        try:
-            with app.app_context():
-                # データベース接続テスト
-                from sqlalchemy import text
-                result = db.session.execute(text('SELECT 1'))
-                print("✅ データベース接続テストに成功")
-                
-                # テーブル作成
-                db.create_all()
-                print("✅ データベーステーブルを作成しました")
-                
-        except Exception as e:
-            print(f"❌ データベーステーブル作成エラー: {e}")
-            print(f"エラー詳細: {type(e).__name__}: {str(e)}")
-            return False
-            
-        DB_INITIALIZED = True
-        print("✅ データベース初期化完了")
-        return True
-        
-    except Exception as e:
-        print(f"❌ データベース初期化に失敗: {e}")
-        import traceback
-        traceback.print_exc()
-        DB_INITIALIZED = False
-        return False
 
 # user_loader
 @login_manager.user_loader
@@ -190,7 +135,7 @@ def health_check():
             "timestamp": datetime.utcnow().isoformat(),
             "database": db_status,
             "database_error": error_detail,
-            "database_url_exists": database_url is not None,
+            "database_type": "SQLite",
             "environment": os.environ.get('FLASK_ENV', 'development'),
             "db_initialized": DB_INITIALIZED
         })
@@ -203,15 +148,10 @@ def health_check():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # データベースが初期化されていない場合は再試行
     if not DB_INITIALIZED:
-        print("🔄 データベース初期化を再試行中...")
-        init_success = init_database()
-        if not init_success:
-            print("❌ データベース初期化失敗 - エラーページを表示")
-            return render_template('error.html', 
-                                 message='データベース接続エラー', 
-                                 details='現在データベースに接続できません。しばらく後にお試しください。')
+        return render_template('error.html', 
+                             message='データベース接続エラー', 
+                             details='データベースが初期化されていません。')
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -240,15 +180,10 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # データベースが初期化されていない場合は再試行
     if not DB_INITIALIZED:
-        print("🔄 データベース初期化を再試行中...")
-        init_success = init_database()
-        if not init_success:
-            print("❌ データベース初期化失敗 - エラーページを表示")
-            return render_template('error.html', 
-                                 message='データベース接続エラー', 
-                                 details='現在データベースに接続できません。しばらく後にお試しください。')
+        return render_template('error.html', 
+                             message='データベース接続エラー', 
+                             details='データベースが初期化されていません。')
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -485,17 +420,13 @@ def not_found_error(error):
 def internal_error(error):
     return render_template('error.html', message='内部サーバーエラーが発生しました'), 500
 
-# アプリケーション起動時に初期化を実行
-with app.app_context():
-    init_database()
-
 if __name__ == '__main__':
     print("🚀 日経テスト練習アプリ（認証版）を起動中...")
     
     if DB_INITIALIZED:
         print("📂 機能:")
         print("   - ✅ ユーザー登録・ログイン")
-        print("   - ✅ PostgreSQL対応")
+        print("   - ✅ SQLite対応")
         print("   - ✅ セキュアなパスワードハッシュ化")
         print("   - ✅ 個人別統計管理")
     else:
@@ -513,6 +444,6 @@ if __name__ == '__main__':
     print("=" * 50)
     
     port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_ENV') != 'production'
+    debug = os.environ.get('FLASK_ENV') != 'production')
     
     app.run(debug=debug, host='0.0.0.0', port=port)
