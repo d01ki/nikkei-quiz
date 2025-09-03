@@ -5,15 +5,6 @@ import random
 import os
 from datetime import datetime
 
-# データベース関連のインポートをtry-catchで保護
-try:
-    from models import db, User, QuizResult, UserStats
-    from forms import LoginForm, RegisterForm
-    DB_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ データベース関連のインポートに失敗: {e}")
-    DB_AVAILABLE = False
-
 app = Flask(__name__)
 
 # 設定
@@ -34,19 +25,48 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
+    'connect_args': {"sslmode": "prefer"} if database_url and 'postgresql' in database_url else {}
 }
 
-# 初期化
-if DB_AVAILABLE:
-    db.init_app(app)
-    login_manager = LoginManager()
-    login_manager.init_app(app)
-    login_manager.login_view = 'login'
-    login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+# データベース関連のインポートを遅延させる
+db = None
+User = None
+QuizResult = None
+UserStats = None
+LoginForm = None
+RegisterForm = None
+login_manager = None
 
-    @login_manager.user_loader
-    def load_user(user_id):
-        return User.query.get(int(user_id))
+def init_database():
+    """データベース関連の初期化を遅延実行"""
+    global db, User, QuizResult, UserStats, LoginForm, RegisterForm, login_manager
+    
+    try:
+        from models import db as _db, User as _User, QuizResult as _QuizResult, UserStats as _UserStats
+        from forms import LoginForm as _LoginForm, RegisterForm as _RegisterForm
+        
+        db = _db
+        User = _User
+        QuizResult = _QuizResult
+        UserStats = _UserStats
+        LoginForm = _LoginForm
+        RegisterForm = _RegisterForm
+        
+        db.init_app(app)
+        
+        login_manager = LoginManager()
+        login_manager.init_app(app)
+        login_manager.login_view = 'login'
+        login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+
+        @login_manager.user_loader
+        def load_user(user_id):
+            return User.query.get(int(user_id))
+            
+        return True
+    except Exception as e:
+        print(f"⚠️ データベース初期化に失敗: {e}")
+        return False
 
 # サンプル問題データ（既存のものを保持）
 SAMPLE_QUESTIONS = [
@@ -146,12 +166,18 @@ def load_questions():
     print(f"📚 サンプル問題データを使用します: {len(SAMPLE_QUESTIONS)}問")
     return SAMPLE_QUESTIONS
 
+# ヘルスチェックエンドポイント
+@app.route('/health')
+def health_check():
+    """ヘルスチェック用エンドポイント"""
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()})
+
 # 認証ルート
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """ログイン"""
-    if not DB_AVAILABLE:
-        flash('データベースが利用できません。', 'error')
+    if not db:
+        flash('システムメンテナンス中です。', 'warning')
         return redirect(url_for('index'))
         
     if current_user.is_authenticated:
@@ -184,8 +210,8 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """ユーザー登録"""
-    if not DB_AVAILABLE:
-        flash('データベースが利用できません。', 'error')
+    if not db:
+        flash('システムメンテナンス中です。', 'warning')
         return redirect(url_for('index'))
         
     if current_user.is_authenticated:
@@ -220,11 +246,11 @@ def register():
     return render_template('auth/register.html', form=form)
 
 @app.route('/logout')
-@login_required
 def logout():
     """ログアウト"""
-    logout_user()
-    flash('ログアウトしました。', 'info')
+    if db and current_user.is_authenticated:
+        logout_user()
+        flash('ログアウトしました。', 'info')
     return redirect(url_for('index'))
 
 # メインルート
@@ -232,7 +258,7 @@ def logout():
 def index():
     """ホームページ"""
     try:
-        if DB_AVAILABLE and current_user.is_authenticated:
+        if db and current_user.is_authenticated:
             stats_obj = current_user.get_stats()
             stats = stats_obj.to_dict()
             # 履歴を追加
@@ -257,12 +283,15 @@ def index():
         return render_template('error.html', message='ホームページの読み込みに失敗しました')
 
 @app.route('/quiz')
-@login_required
 def quiz():
     """クイズページ"""
-    if not DB_AVAILABLE:
-        flash('データベースが利用できません。', 'error')
+    if not db:
+        flash('システムメンテナンス中です。', 'warning')
         return redirect(url_for('index'))
+        
+    if not current_user.is_authenticated:
+        flash('ログインが必要です。', 'warning')
+        return redirect(url_for('login'))
         
     try:
         questions = load_questions()
@@ -277,12 +306,15 @@ def quiz():
         return render_template('error.html', message='クイズページの読み込みに失敗しました')
 
 @app.route('/dashboard')
-@login_required
 def dashboard():
     """ダッシュボードページ"""
-    if not DB_AVAILABLE:
-        flash('データベースが利用できません。', 'error')
+    if not db:
+        flash('システムメンテナンス中です。', 'warning')
         return redirect(url_for('index'))
+        
+    if not current_user.is_authenticated:
+        flash('ログインが必要です。', 'warning')
+        return redirect(url_for('login'))
         
     try:
         stats_obj = current_user.get_stats()
@@ -293,12 +325,15 @@ def dashboard():
         return render_template('error.html', message='ダッシュボードの読み込みに失敗しました')
 
 @app.route('/history')
-@login_required
 def history():
     """履歴ページ"""
-    if not DB_AVAILABLE:
-        flash('データベースが利用できません。', 'error')
+    if not db:
+        flash('システムメンテナンス中です。', 'warning')
         return redirect(url_for('index'))
+        
+    if not current_user.is_authenticated:
+        flash('ログインが必要です。', 'warning')
+        return redirect(url_for('login'))
         
     try:
         stats_obj = current_user.get_stats()
@@ -325,9 +360,11 @@ def history():
 
 # API エンドポイント
 @app.route('/api/get_question')
-@login_required
 def get_question():
     """ランダムな問題を取得"""
+    if not db or not current_user.is_authenticated:
+        return jsonify({'error': '認証が必要です'}), 401
+        
     try:
         questions = load_questions()
         print(f"📝 利用可能な問題数: {len(questions)}")
@@ -355,11 +392,10 @@ def get_question():
         return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
 
 @app.route('/api/submit_answer', methods=['POST'])
-@login_required
 def submit_answer():
     """回答を送信"""
-    if not DB_AVAILABLE:
-        return jsonify({'error': 'データベースが利用できません'}), 500
+    if not db or not current_user.is_authenticated:
+        return jsonify({'error': '認証が必要です'}), 401
         
     try:
         data = request.json
@@ -407,17 +443,16 @@ def submit_answer():
         })
         
     except Exception as e:
-        if DB_AVAILABLE:
+        if db:
             db.session.rollback()
         print(f"❌ submit_answer エラー: {e}")
         return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
 
 @app.route('/api/stats', methods=['GET', 'DELETE'])
-@login_required
 def handle_stats():
     """統計データの取得・削除"""
-    if not DB_AVAILABLE:
-        return jsonify({'error': 'データベースが利用できません'}), 500
+    if not db or not current_user.is_authenticated:
+        return jsonify({'error': '認証が必要です'}), 401
         
     try:
         if request.method == 'GET':
@@ -435,7 +470,7 @@ def handle_stats():
             
             return jsonify({'message': '統計をリセットしました'})
     except Exception as e:
-        if DB_AVAILABLE:
+        if db:
             db.session.rollback()
         print(f"❌ handle_stats エラー: {e}")
         return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
@@ -448,34 +483,39 @@ def not_found_error(error):
 def internal_error(error):
     return render_template('error.html', message='内部サーバーエラーが発生しました'), 500
 
-# データベース初期化
-def init_db():
-    """データベースを初期化"""
-    if not DB_AVAILABLE:
-        print("⚠️ データベース機能が無効です")
-        return
-        
-    try:
-        with app.app_context():
-            db.create_all()
-            print("✅ データベースを初期化しました")
-    except Exception as e:
-        print(f"❌ データベース初期化エラー: {e}")
+# アプリケーション初期化
+@app.before_first_request
+def initialize_app():
+    """アプリケーション初期化（最初のリクエスト時）"""
+    if init_database():
+        try:
+            with app.app_context():
+                db.create_all()
+                print("✅ データベースを初期化しました")
+        except Exception as e:
+            print(f"❌ データベース初期化エラー: {e}")
+    else:
+        print("⚠️ データベース初期化をスキップしました")
 
 if __name__ == '__main__':
     print("🚀 日経テスト練習アプリ（認証版）を起動中...")
     
     # データベース初期化
-    init_db()
-    
-    if DB_AVAILABLE:
+    if init_database():
+        try:
+            with app.app_context():
+                db.create_all()
+                print("✅ データベースを初期化しました")
+        except Exception as e:
+            print(f"❌ データベース初期化エラー: {e}")
+        
         print("📂 機能:")
         print("   - ✅ ユーザー登録・ログイン")
         print("   - ✅ PostgreSQL対応")
         print("   - ✅ セキュアなパスワードハッシュ化")
         print("   - ✅ 個人別統計管理")
     else:
-        print("⚠️ データベース機能が無効です")
+        print("⚠️ データベース機能が無効です（基本機能のみ）")
     
     print("")
     print("🌐 アクセス方法:")
