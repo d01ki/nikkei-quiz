@@ -15,10 +15,14 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_
 # データベース設定（PostgreSQL優先、フォールバックとしてSQLite）
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
+    # PostgreSQL URL形式を調整（pg8000ドライバー用）
     if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
+    elif database_url.startswith('postgresql://'):
+        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
+    
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print("✅ PostgreSQLデータベースを使用します")
+    print("✅ PostgreSQLデータベース（pg8000）を使用します")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
     print("⚠️ SQLiteデータベースを使用します（開発用）")
@@ -131,7 +135,7 @@ def health_check():
     try:
         db_status = "disconnected"
         error_detail = None
-        db_type = "PostgreSQL" if database_url else "SQLite"
+        db_type = "PostgreSQL (pg8000)" if database_url else "SQLite"
         
         if DB_INITIALIZED and db:
             try:
