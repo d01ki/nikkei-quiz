@@ -54,6 +54,35 @@ def load_user(user_id):
             return None
     return None
 
+# ダミーフィールドクラス
+class DummyField:
+    def __init__(self, label_text=""):
+        self.data = ""
+        self.label_text = label_text
+    
+    def label(self, **kwargs):
+        return f'<label {" ".join(f"{k}=\"{v}\"" for k, v in kwargs.items())}>{self.label_text}</label>'
+    
+    def __call__(self, **kwargs):
+        return f'<input type="text" disabled placeholder="データベース接続中..." {" ".join(f"{k}=\"{v}\"" for k, v in kwargs.items())} />'
+
+# ダミーフォームクラス（DB接続失敗時用）
+class DummyForm:
+    def __init__(self):
+        self.username = DummyField("ユーザー名")
+        self.email = DummyField("メールアドレス")
+        self.display_name = DummyField("表示名（任意）")
+        self.password = DummyField("パスワード")
+        self.password2 = DummyField("パスワード確認")
+        self.remember_me = DummyField("ログイン状態を保持")
+        self.submit = DummyField()
+    
+    def hidden_tag(self):
+        return ""
+    
+    def validate_on_submit(self):
+        return False
+
 def init_database():
     """データベース関連の初期化"""
     global db, User, QuizResult, UserStats, LoginForm, RegisterForm, DB_INITIALIZED
@@ -81,21 +110,26 @@ def init_database():
         LoginForm = forms.LoginForm
         RegisterForm = forms.RegisterForm
         
-        # SQLAlchemyの初期化
+        # SQLAlchemyの初期化（重複チェック）
         try:
-            # 既に初期化されている場合はスキップ
-            if not hasattr(db, 'app') or db.app is None:
+            # 既にアプリに登録されているかチェック
+            if not hasattr(app, 'extensions') or 'sqlalchemy' not in app.extensions:
                 db.init_app(app)
-            print("✅ SQLAlchemyの初期化に成功")
+                print("✅ SQLAlchemyの初期化に成功")
+            else:
+                print("⚠️ SQLAlchemy は既に初期化されています")
         except Exception as e:
-            print(f"❌ SQLAlchemy初期化エラー: {e}")
-            return False
+            if "already been registered" in str(e):
+                print("⚠️ SQLAlchemy already registered, using existing instance")
+            else:
+                print(f"❌ SQLAlchemy初期化エラー: {e}")
+                return False
         
         # アプリケーションコンテキスト内でテーブル作成
         try:
-            # データベース接続テスト
-            from sqlalchemy import text
             with app.app_context():
+                # データベース接続テスト
+                from sqlalchemy import text
                 db.session.execute(text('SELECT 1'))
                 print("✅ データベース接続テストに成功")
                 
@@ -186,15 +220,6 @@ def health_check():
             "error": str(e),
             "database": "error"
         }), 500
-
-# ダミーフォームクラス（DB接続失敗時用）
-class DummyForm:
-    def __init__(self):
-        pass
-    def hidden_tag(self):
-        return ""
-    def validate_on_submit(self):
-        return False
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
