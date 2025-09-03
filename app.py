@@ -37,6 +37,17 @@ RegisterForm = None
 login_manager = None
 DB_INITIALIZED = False
 
+# Flask-Loginの初期設定（エラー回避のため）
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+
+# ダミーのuser_loaderを設定（後で上書きされます）
+@login_manager.user_loader
+def load_user_dummy(user_id):
+    return None
+
 def init_database():
     """データベース関連の初期化を遅延実行"""
     global db, User, QuizResult, UserStats, LoginForm, RegisterForm, login_manager, DB_INITIALIZED
@@ -57,11 +68,7 @@ def init_database():
         
         db.init_app(app)
         
-        login_manager = LoginManager()
-        login_manager.init_app(app)
-        login_manager.login_view = 'login'
-        login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
-
+        # 実際のuser_loaderで上書き
         @login_manager.user_loader
         def load_user(user_id):
             return User.query.get(int(user_id))
@@ -78,6 +85,15 @@ def init_database():
         print(f"   エラー詳細: {str(e)}")
         DB_INITIALIZED = False
         return False
+
+# テンプレートで使用する変数を全体で利用可能にする
+@app.context_processor
+def inject_global_vars():
+    """テンプレートで使用するグローバル変数を注入"""
+    return {
+        'db_available': DB_INITIALIZED,
+        'current_user': current_user
+    }
 
 # サンプル問題データ
 SAMPLE_QUESTIONS = [
@@ -154,7 +170,8 @@ def health_check():
     return jsonify({
         "status": "healthy", 
         "timestamp": datetime.utcnow().isoformat(),
-        "database": DB_INITIALIZED
+        "database": DB_INITIALIZED,
+        "python_version": os.sys.version
     })
 
 # データベース初期化を最初のリクエストで実行
@@ -267,10 +284,10 @@ def index():
                 'recent_history': []
             }
         
-        return render_template('index.html', stats=stats, db_available=DB_INITIALIZED)
+        return render_template('index.html', stats=stats)
     except Exception as e:
         print(f"❌ ホームページエラー: {e}")
-        return render_template('index.html', stats={'total_questions': 0, 'correct_answers': 0, 'categories': {}, 'recent_history': []}, db_available=False)
+        return render_template('index.html', stats={'total_questions': 0, 'correct_answers': 0, 'categories': {}, 'recent_history': []})
 
 @app.route('/quiz')
 def quiz():
@@ -282,7 +299,7 @@ def quiz():
         
         # セッションをクリア
         session.clear()
-        return render_template('quiz.html', db_available=DB_INITIALIZED)
+        return render_template('quiz.html')
     except Exception as e:
         print(f"❌ クイズページエラー: {e}")
         return render_template('error.html', message='クイズページの読み込みに失敗しました')
