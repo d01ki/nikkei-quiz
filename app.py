@@ -28,13 +28,15 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_recycle': 300,
 }
 
-# グローバル変数
+# グローバル変数の初期化
 db = None
 User = None
 QuizResult = None
 UserStats = None
 LoginForm = None
 RegisterForm = None
+
+# Flask-Loginの初期化
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -42,9 +44,9 @@ login_manager.login_message = 'このページにアクセスするにはログ�
 
 DB_INITIALIZED = False
 
-# ダミーのuser_loader（後で上書きされます）
+# user_loader
 @login_manager.user_loader
-def load_user_dummy(user_id):
+def load_user(user_id):
     if User and DB_INITIALIZED:
         try:
             return User.query.get(int(user_id))
@@ -71,6 +73,7 @@ def init_database():
             print(f"❌ モジュールインポートエラー: {e}")
             return False
         
+        # グローバル変数に代入
         db = models.db
         User = models.User
         QuizResult = models.QuizResult
@@ -80,20 +83,19 @@ def init_database():
         
         # SQLAlchemyの初期化
         try:
-            db.init_app(app)
+            # 既に初期化されている場合はスキップ
+            if not hasattr(db, 'app') or db.app is None:
+                db.init_app(app)
             print("✅ SQLAlchemyの初期化に成功")
-        except RuntimeError as e:
-            if "already been registered" in str(e):
-                print("⚠️ SQLAlchemy already registered, using existing instance")
-            else:
-                print(f"❌ SQLAlchemy初期化エラー: {e}")
-                return False
+        except Exception as e:
+            print(f"❌ SQLAlchemy初期化エラー: {e}")
+            return False
         
-        # データベーステーブルを作成
-        with app.app_context():
-            try:
-                # データベース接続テスト
-                from sqlalchemy import text
+        # アプリケーションコンテキスト内でテーブル作成
+        try:
+            # データベース接続テスト
+            from sqlalchemy import text
+            with app.app_context():
                 db.session.execute(text('SELECT 1'))
                 print("✅ データベース接続テストに成功")
                 
@@ -101,9 +103,9 @@ def init_database():
                 db.create_all()
                 print("✅ データベーステーブルを作成しました")
                 
-            except Exception as e:
-                print(f"❌ データベーステーブル作成エラー: {e}")
-                return False
+        except Exception as e:
+            print(f"❌ データベーステーブル作成エラー: {e}")
+            return False
             
         DB_INITIALIZED = True
         print("✅ データベース初期化完了")
@@ -164,13 +166,13 @@ def health_check():
     try:
         db_status = "disconnected"
         if DB_INITIALIZED and db:
-            # データベース接続テスト
             try:
                 from sqlalchemy import text
-                db.session.execute(text('SELECT 1'))
-                db_status = "connected"
-            except:
-                db_status = "error"
+                with app.app_context():
+                    db.session.execute(text('SELECT 1'))
+                    db_status = "connected"
+            except Exception as e:
+                db_status = f"error: {str(e)}"
         
         return jsonify({
             "status": "healthy", 
@@ -185,9 +187,14 @@ def health_check():
             "database": "error"
         }), 500
 
-# アプリケーション起動時に初期化
-with app.app_context():
-    init_database()
+# ダミーフォームクラス（DB接続失敗時用）
+class DummyForm:
+    def __init__(self):
+        pass
+    def hidden_tag(self):
+        return ""
+    def validate_on_submit(self):
+        return False
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -196,7 +203,7 @@ def login():
         init_success = init_database()
         if not init_success:
             flash('データベース接続中です。しばらくお待ちください。', 'warning')
-            return render_template('auth/login.html', form=None, db_error=True)
+            return render_template('auth/login.html', form=DummyForm(), db_error=True)
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -230,7 +237,7 @@ def register():
         init_success = init_database()
         if not init_success:
             flash('データベース接続中です。しばらくお待ちください。', 'warning')
-            return render_template('auth/register.html', form=None, db_error=True)
+            return render_template('auth/register.html', form=DummyForm(), db_error=True)
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -466,6 +473,9 @@ def not_found_error(error):
 @app.errorhandler(500)
 def internal_error(error):
     return render_template('error.html', message='内部サーバーエラーが発生しました'), 500
+
+# アプリケーション起動時に初期化を実行
+init_database()
 
 if __name__ == '__main__':
     print("🚀 日経テスト練習アプリ（認証版）を起動中...")
