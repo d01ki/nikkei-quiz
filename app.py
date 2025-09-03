@@ -54,35 +54,6 @@ def load_user(user_id):
             return None
     return None
 
-# ダミーフィールドクラス
-class DummyField:
-    def __init__(self, label_text=""):
-        self.data = ""
-        self.label_text = label_text
-    
-    def label(self, **kwargs):
-        return f'<label {" ".join(f"{k}=\"{v}\"" for k, v in kwargs.items())}>{self.label_text}</label>'
-    
-    def __call__(self, **kwargs):
-        return f'<input type="text" disabled placeholder="データベース接続中..." {" ".join(f"{k}=\"{v}\"" for k, v in kwargs.items())} />'
-
-# ダミーフォームクラス（DB接続失敗時用）
-class DummyForm:
-    def __init__(self):
-        self.username = DummyField("ユーザー名")
-        self.email = DummyField("メールアドレス")
-        self.display_name = DummyField("表示名（任意）")
-        self.password = DummyField("パスワード")
-        self.password2 = DummyField("パスワード確認")
-        self.remember_me = DummyField("ログイン状態を保持")
-        self.submit = DummyField()
-    
-    def hidden_tag(self):
-        return ""
-    
-    def validate_on_submit(self):
-        return False
-
 def init_database():
     """データベース関連の初期化"""
     global db, User, QuizResult, UserStats, LoginForm, RegisterForm, DB_INITIALIZED
@@ -92,6 +63,7 @@ def init_database():
         
     try:
         print("🔍 データベース初期化を開始...")
+        print(f"DATABASE_URL存在: {'あり' if database_url else 'なし'}")
         
         # モジュールのインポート
         try:
@@ -110,14 +82,11 @@ def init_database():
         LoginForm = forms.LoginForm
         RegisterForm = forms.RegisterForm
         
-        # SQLAlchemyの初期化（重複チェック）
+        # SQLAlchemyの初期化
         try:
-            # 既にアプリに登録されているかチェック
-            if not hasattr(app, 'extensions') or 'sqlalchemy' not in app.extensions:
-                db.init_app(app)
-                print("✅ SQLAlchemyの初期化に成功")
-            else:
-                print("⚠️ SQLAlchemy は既に初期化されています")
+            # まずはSQLAlchemyを初期化
+            db.init_app(app)
+            print("✅ SQLAlchemyの初期化に成功")
         except Exception as e:
             if "already been registered" in str(e):
                 print("⚠️ SQLAlchemy already registered, using existing instance")
@@ -130,7 +99,7 @@ def init_database():
             with app.app_context():
                 # データベース接続テスト
                 from sqlalchemy import text
-                db.session.execute(text('SELECT 1'))
+                result = db.session.execute(text('SELECT 1'))
                 print("✅ データベース接続テストに成功")
                 
                 # テーブル作成
@@ -139,6 +108,7 @@ def init_database():
                 
         except Exception as e:
             print(f"❌ データベーステーブル作成エラー: {e}")
+            print(f"エラー詳細: {type(e).__name__}: {str(e)}")
             return False
             
         DB_INITIALIZED = True
@@ -199,6 +169,8 @@ def load_questions():
 def health_check():
     try:
         db_status = "disconnected"
+        error_detail = None
+        
         if DB_INITIALIZED and db:
             try:
                 from sqlalchemy import text
@@ -206,13 +178,17 @@ def health_check():
                     db.session.execute(text('SELECT 1'))
                     db_status = "connected"
             except Exception as e:
-                db_status = f"error: {str(e)}"
+                db_status = "error"
+                error_detail = str(e)
         
         return jsonify({
             "status": "healthy", 
             "timestamp": datetime.utcnow().isoformat(),
             "database": db_status,
-            "environment": os.environ.get('FLASK_ENV', 'development')
+            "database_error": error_detail,
+            "database_url_exists": database_url is not None,
+            "environment": os.environ.get('FLASK_ENV', 'development'),
+            "db_initialized": DB_INITIALIZED
         })
     except Exception as e:
         return jsonify({
@@ -225,10 +201,13 @@ def health_check():
 def login():
     # データベースが初期化されていない場合は再試行
     if not DB_INITIALIZED:
+        print("🔄 データベース初期化を再試行中...")
         init_success = init_database()
         if not init_success:
-            flash('データベース接続中です。しばらくお待ちください。', 'warning')
-            return render_template('auth/login.html', form=DummyForm(), db_error=True)
+            print("❌ データベース初期化失敗 - エラーページを表示")
+            return render_template('error.html', 
+                                 message='データベース接続エラー', 
+                                 details='現在データベースに接続できません。しばらく後にお試しください。')
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -259,10 +238,13 @@ def login():
 def register():
     # データベースが初期化されていない場合は再試行
     if not DB_INITIALIZED:
+        print("🔄 データベース初期化を再試行中...")
         init_success = init_database()
         if not init_success:
-            flash('データベース接続中です。しばらくお待ちください。', 'warning')
-            return render_template('auth/register.html', form=DummyForm(), db_error=True)
+            print("❌ データベース初期化失敗 - エラーページを表示")
+            return render_template('error.html', 
+                                 message='データベース接続エラー', 
+                                 details='現在データベースに接続できません。しばらく後にお試しください。')
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
