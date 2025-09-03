@@ -12,7 +12,7 @@ app = Flask(__name__)
 # 設定
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
-# データベース設定（Render最適化 - pg8000 + SSL対応）
+# データベース設定（Render最適化 - pg8000専用SSL設定）
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     # RenderのPostgreSQLは postgres:// で始まることが多い
@@ -21,24 +21,24 @@ if database_url:
     elif database_url.startswith('postgresql://'):
         database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
     
-    # SSL設定を追加（Render PostgreSQL対応）
-    if 'sslmode' not in database_url:
-        database_url += '?sslmode=require'
-    
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"✅ PostgreSQL (pg8000 + SSL) を使用します: {database_url[:30]}...")
+    print(f"✅ PostgreSQL (pg8000) を使用します: {database_url[:30]}...")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
     print("⚠️ SQLiteデータベースを使用します（開発用）")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Render最適化設定
+# pg8000用のSSL設定を含むエンジンオプション
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
     'pool_timeout': 20,
     'max_overflow': 0,
-    'pool_size': 10
+    'pool_size': 10,
+    # pg8000用のSSL設定
+    'connect_args': {
+        'ssl_context': True,
+    } if database_url else {}
 }
 
 # モジュールのインポートと初期化
@@ -67,9 +67,10 @@ try:
             
             # 接続テスト
             from sqlalchemy import text
-            db.session.execute(text('SELECT 1'))
+            result = db.session.execute(text('SELECT version()'))
+            version = result.fetchone()[0]
+            print(f"✅ データベース接続テスト成功: {version[:50]}...")
             db.session.commit()
-            print("✅ データベース接続テスト成功")
             
         except Exception as table_error:
             print(f"⚠️ テーブル作成/接続テストエラー: {table_error}")
@@ -157,7 +158,7 @@ def health_check():
     try:
         db_status = "disconnected"
         error_detail = None
-        db_type = "PostgreSQL (pg8000 + SSL)" if database_url else "SQLite"
+        db_type = "PostgreSQL (pg8000)" if database_url else "SQLite"
         
         if DB_INITIALIZED and db:
             try:
@@ -177,7 +178,8 @@ def health_check():
             "database_type": db_type,
             "database_url_exists": database_url is not None,
             "environment": os.environ.get('FLASK_ENV', 'development'),
-            "db_initialized": DB_INITIALIZED
+            "db_initialized": DB_INITIALIZED,
+            "secret_key_set": bool(os.environ.get('SECRET_KEY'))
         })
     except Exception as e:
         return jsonify({
@@ -194,6 +196,7 @@ def debug_info():
         env_vars = {
             'FLASK_ENV': os.environ.get('FLASK_ENV', 'Not set'),
             'SECRET_KEY_SET': 'Yes' if os.environ.get('SECRET_KEY') else 'No',
+            'SECRET_KEY_LENGTH': len(os.environ.get('SECRET_KEY', '')),
             'DATABASE_URL_SET': 'Yes' if os.environ.get('DATABASE_URL') else 'No',
             'DATABASE_URL_PREFIX': database_url[:30] + '...' if database_url else 'None',
             'PORT': os.environ.get('PORT', 'Not set'),
@@ -215,18 +218,20 @@ def debug_info():
             'engine_options': app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {}),
         }
         
-        # テーブル存在確認
+        # テーブル存在確認（pg8000対応）
         tables_info = {}
         if DB_INITIALIZED and db:
             try:
                 with app.app_context():
-                    from sqlalchemy import inspect
+                    from sqlalchemy import inspect, text
                     inspector = inspect(db.engine)
+                    tables = inspector.get_table_names()
                     tables_info = {
-                        'existing_tables': inspector.get_table_names(),
-                        'users_table_exists': 'users' in inspector.get_table_names(),
-                        'quiz_results_table_exists': 'quiz_results' in inspector.get_table_names(),
-                        'user_stats_table_exists': 'user_stats' in inspector.get_table_names(),
+                        'existing_tables': tables,
+                        'users_table_exists': 'users' in tables,
+                        'quiz_results_table_exists': 'quiz_results' in tables,
+                        'user_stats_table_exists': 'user_stats' in tables,
+                        'total_tables': len(tables)
                     }
             except Exception as e:
                 tables_info = {'error': str(e)}
@@ -292,6 +297,18 @@ def register():
     form = RegisterForm()
     if form.validate_on_submit():
         try:
+            # 重複チェック
+            existing_user = User.query.filter(
+                (User.username == form.username.data) | (User.email == form.email.data)
+            ).first()
+            
+            if existing_user:
+                if existing_user.username == form.username.data:
+                    flash('このユーザー名は既に使用されています。', 'error')
+                else:
+                    flash('このメールアドレスは既に使用されています。', 'error')
+                return render_template('auth/register.html', form=form)
+            
             user = User(
                 username=form.username.data,
                 email=form.email.data,
@@ -300,7 +317,7 @@ def register():
             user.set_password(form.password.data)
             
             db.session.add(user)
-            db.session.commit()
+            db.session.flush()  # IDを取得するためにflush
             
             stats = UserStats(user_id=user.id)
             db.session.add(stats)
@@ -313,6 +330,8 @@ def register():
             db.session.rollback()
             flash('登録中にエラーが発生しました。再度お試しください。', 'error')
             print(f"Registration error: {e}")
+            import traceback
+            traceback.print_exc()
     
     return render_template('auth/register.html', form=form)
 
