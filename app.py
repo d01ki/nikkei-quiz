@@ -12,26 +12,10 @@ app = Flask(__name__)
 # 設定
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
-# データベース設定（PostgreSQL優先、フォールバックとしてSQLite）
-database_url = os.environ.get('DATABASE_URL')
-if database_url:
-    # PostgreSQL URL形式を調整（pg8000ドライバー用）
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
-    elif database_url.startswith('postgresql://'):
-        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
-    
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print("✅ PostgreSQLデータベース（pg8000）を使用します")
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
-    print("⚠️ SQLiteデータベースを使用します（開発用）")
-
+# 一時的にSQLiteを使用（PostgreSQL接続問題のため）
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,
-    'pool_recycle': 300,
-}
+print("⚠️ 一時的にSQLiteデータベースを使用します（PostgreSQL接続問題のため）")
 
 # モジュールのインポートと初期化
 try:
@@ -135,7 +119,7 @@ def health_check():
     try:
         db_status = "disconnected"
         error_detail = None
-        db_type = "PostgreSQL (pg8000)" if database_url else "SQLite"
+        db_type = "SQLite (temporary)"
         
         if DB_INITIALIZED and db:
             try:
@@ -153,9 +137,9 @@ def health_check():
             "database": db_status,
             "database_error": error_detail,
             "database_type": db_type,
-            "database_url_exists": database_url is not None,
             "environment": os.environ.get('FLASK_ENV', 'development'),
-            "db_initialized": DB_INITIALIZED
+            "db_initialized": DB_INITIALIZED,
+            "note": "一時的にSQLiteを使用中。PostgreSQL接続問題を調査中。"
         })
     except Exception as e:
         return jsonify({
@@ -444,7 +428,7 @@ if __name__ == '__main__':
     if DB_INITIALIZED:
         print("📂 機能:")
         print("   - ✅ ユーザー登録・ログイン")
-        print("   - ✅ PostgreSQL/SQLite対応")
+        print("   - ✅ SQLite対応")
         print("   - ✅ セキュアなパスワードハッシュ化")
         print("   - ✅ 個人別統計管理")
     else:
