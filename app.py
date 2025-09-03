@@ -12,26 +12,27 @@ app = Flask(__name__)
 # 設定
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
-# データベース設定（PostgreSQL with pg8000 driver）
+# データベース設定（Render最適化 - psycopg2-binary使用）
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # pg8000ドライバーを明示的に指定
-    if database_url.startswith('postgresql://'):
-        # postgresql://user:pass@host:port/db を postgresql+pg8000://user:pass@host:port/db に変換
-        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
-    elif database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
+    # RenderのPostgreSQLは postgres:// で始まることが多い
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print("✅ PostgreSQLデータベース（pg8000ドライバー）を使用します")
+    print(f"✅ PostgreSQLデータベースを使用します: {database_url[:30]}...")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
     print("⚠️ SQLiteデータベースを使用します（開発用）")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Render最適化設定
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
+    'pool_timeout': 20,
+    'max_overflow': 0,
+    'pool_size': 10
 }
 
 # モジュールのインポートと初期化
@@ -52,10 +53,21 @@ try:
     db.init_app(app)
     print("✅ SQLAlchemyの初期化に成功")
     
-    # データベーステーブルを作成
+    # データベーステーブルを作成（Render対応強化）
     with app.app_context():
-        db.create_all()
-        print("✅ データベーステーブルを作成しました")
+        try:
+            db.create_all()
+            print("✅ データベーステーブルを作成しました")
+            
+            # 接続テスト
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            print("✅ データベース接続テスト成功")
+            
+        except Exception as table_error:
+            print(f"⚠️ テーブル作成/接続テストエラー: {table_error}")
+            # テーブル作成に失敗してもアプリは起動させる（フォールバック）
     
     DB_INITIALIZED = True
     print("✅ データベース初期化完了")
@@ -136,7 +148,7 @@ def health_check():
     try:
         db_status = "disconnected"
         error_detail = None
-        db_type = "PostgreSQL (pg8000)" if database_url else "SQLite"
+        db_type = "PostgreSQL (psycopg2)" if database_url else "SQLite"
         
         if DB_INITIALIZED and db:
             try:
