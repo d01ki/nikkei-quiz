@@ -179,7 +179,7 @@ def health_check():
     })
 
 # 起動時に1回だけデータベース初期化を実行
-@app.before_first_request
+@app.before_request
 def initialize_app():
     """アプリケーション初期化（最初のリクエスト時のみ）"""
     init_database()
