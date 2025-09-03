@@ -12,15 +12,21 @@ app = Flask(__name__)
 # 設定
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
-# データベース設定（Render最適化 - psycopg2-binary使用）
+# データベース設定（Render最適化 - pg8000 + SSL対応）
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     # RenderのPostgreSQLは postgres:// で始まることが多い
     if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        database_url = database_url.replace('postgres://', 'postgresql+pg8000://', 1)
+    elif database_url.startswith('postgresql://'):
+        database_url = database_url.replace('postgresql://', 'postgresql+pg8000://', 1)
+    
+    # SSL設定を追加（Render PostgreSQL対応）
+    if 'sslmode' not in database_url:
+        database_url += '?sslmode=require'
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"✅ PostgreSQLデータベースを使用します: {database_url[:30]}...")
+    print(f"✅ PostgreSQL (pg8000 + SSL) を使用します: {database_url[:30]}...")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
     print("⚠️ SQLiteデータベースを使用します（開発用）")
@@ -67,6 +73,9 @@ try:
             
         except Exception as table_error:
             print(f"⚠️ テーブル作成/接続テストエラー: {table_error}")
+            # 詳細なエラー情報を表示
+            import traceback
+            traceback.print_exc()
             # テーブル作成に失敗してもアプリは起動させる（フォールバック）
     
     DB_INITIALIZED = True
@@ -148,7 +157,7 @@ def health_check():
     try:
         db_status = "disconnected"
         error_detail = None
-        db_type = "PostgreSQL (psycopg2)" if database_url else "SQLite"
+        db_type = "PostgreSQL (pg8000 + SSL)" if database_url else "SQLite"
         
         if DB_INITIALIZED and db:
             try:
@@ -175,6 +184,67 @@ def health_check():
             "status": "error",
             "error": str(e),
             "database": "error"
+        }), 500
+
+@app.route('/debug')
+def debug_info():
+    """詳細なデバッグ情報を返すエンドポイント"""
+    try:
+        # 環境変数の確認（機密情報は隠す）
+        env_vars = {
+            'FLASK_ENV': os.environ.get('FLASK_ENV', 'Not set'),
+            'SECRET_KEY_SET': 'Yes' if os.environ.get('SECRET_KEY') else 'No',
+            'DATABASE_URL_SET': 'Yes' if os.environ.get('DATABASE_URL') else 'No',
+            'DATABASE_URL_PREFIX': database_url[:30] + '...' if database_url else 'None',
+            'PORT': os.environ.get('PORT', 'Not set'),
+        }
+        
+        # モジュール読み込み状況
+        modules_status = {
+            'models_imported': 'models' in sys.modules,
+            'forms_imported': 'forms' in sys.modules,
+            'db_object_exists': db is not None,
+            'User_model_exists': User is not None,
+            'LoginForm_exists': LoginForm is not None,
+        }
+        
+        # データベース詳細情報
+        db_info = {
+            'db_initialized': DB_INITIALIZED,
+            'database_uri': app.config.get('SQLALCHEMY_DATABASE_URI', 'Not configured')[:80] + '...',
+            'engine_options': app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {}),
+        }
+        
+        # テーブル存在確認
+        tables_info = {}
+        if DB_INITIALIZED and db:
+            try:
+                with app.app_context():
+                    from sqlalchemy import inspect
+                    inspector = inspect(db.engine)
+                    tables_info = {
+                        'existing_tables': inspector.get_table_names(),
+                        'users_table_exists': 'users' in inspector.get_table_names(),
+                        'quiz_results_table_exists': 'quiz_results' in inspector.get_table_names(),
+                        'user_stats_table_exists': 'user_stats' in inspector.get_table_names(),
+                    }
+            except Exception as e:
+                tables_info = {'error': str(e)}
+        
+        return jsonify({
+            'timestamp': datetime.utcnow().isoformat(),
+            'environment_variables': env_vars,
+            'modules_status': modules_status,
+            'database_info': db_info,
+            'tables_info': tables_info,
+            'python_version': sys.version,
+            'flask_version': app.__class__.__module__
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'Debug info generation failed: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
         }), 500
 
 @app.route('/login', methods=['GET', 'POST'])
