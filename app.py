@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 import sys
 
+# Flask アプリケーション作成
 app = Flask(__name__)
 
 # 設定
@@ -44,16 +45,6 @@ login_manager.login_message = 'このページにアクセスするにはログ�
 
 DB_INITIALIZED = False
 
-# user_loader
-@login_manager.user_loader
-def load_user(user_id):
-    if User and DB_INITIALIZED:
-        try:
-            return User.query.get(int(user_id))
-        except:
-            return None
-    return None
-
 def init_database():
     """データベース関連の初期化"""
     global db, User, QuizResult, UserStats, LoginForm, RegisterForm, DB_INITIALIZED
@@ -82,17 +73,20 @@ def init_database():
         LoginForm = forms.LoginForm
         RegisterForm = forms.RegisterForm
         
-        # SQLAlchemyの初期化
+        # SQLAlchemyの初期化 - 強制的に再初期化
         try:
-            # まずはSQLAlchemyを初期化
+            # 既存のSQLAlchemyインスタンスをクリア
+            if hasattr(app, 'extensions') and 'sqlalchemy' in app.extensions:
+                del app.extensions['sqlalchemy']
+                print("🔄 既存のSQLAlchemy拡張をクリア")
+            
+            # 新しくSQLAlchemyを初期化
             db.init_app(app)
             print("✅ SQLAlchemyの初期化に成功")
+            
         except Exception as e:
-            if "already been registered" in str(e):
-                print("⚠️ SQLAlchemy already registered, using existing instance")
-            else:
-                print(f"❌ SQLAlchemy初期化エラー: {e}")
-                return False
+            print(f"❌ SQLAlchemy初期化エラー: {e}")
+            return False
         
         # アプリケーションコンテキスト内でテーブル作成
         try:
@@ -121,6 +115,16 @@ def init_database():
         traceback.print_exc()
         DB_INITIALIZED = False
         return False
+
+# user_loader
+@login_manager.user_loader
+def load_user(user_id):
+    if User and DB_INITIALIZED:
+        try:
+            return User.query.get(int(user_id))
+        except:
+            return None
+    return None
 
 # テンプレート用のコンテキストプロセッサ
 @app.context_processor
@@ -482,7 +486,8 @@ def internal_error(error):
     return render_template('error.html', message='内部サーバーエラーが発生しました'), 500
 
 # アプリケーション起動時に初期化を実行
-init_database()
+with app.app_context():
+    init_database()
 
 if __name__ == '__main__':
     print("🚀 日経テスト練習アプリ（認証版）を起動中...")
