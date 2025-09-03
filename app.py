@@ -4,6 +4,7 @@ import json
 import random
 import os
 from datetime import datetime
+import sys
 
 app = Flask(__name__)
 
@@ -16,8 +17,10 @@ if database_url:
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    print(f"✅ データベースURL設定完了")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
+    print("⚠️ SQLiteデータベースを使用します")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -42,8 +45,11 @@ DB_INITIALIZED = False
 # ダミーのuser_loader（後で上書きされます）
 @login_manager.user_loader
 def load_user_dummy(user_id):
-    if User:
-        return User.query.get(int(user_id))
+    if User and DB_INITIALIZED:
+        try:
+            return User.query.get(int(user_id))
+        except:
+            return None
     return None
 
 def init_database():
@@ -54,8 +60,16 @@ def init_database():
         return True
         
     try:
-        import models
-        import forms
+        print("🔍 データベース初期化を開始...")
+        
+        # モジュールのインポート
+        try:
+            import models
+            import forms
+            print("✅ モジュールのインポートに成功")
+        except ImportError as e:
+            print(f"❌ モジュールインポートエラー: {e}")
+            return False
         
         db = models.db
         User = models.User
@@ -64,25 +78,41 @@ def init_database():
         LoginForm = forms.LoginForm
         RegisterForm = forms.RegisterForm
         
-        # SQLAlchemyの初期化（重複チェック付き）
+        # SQLAlchemyの初期化
         try:
             db.init_app(app)
+            print("✅ SQLAlchemyの初期化に成功")
         except RuntimeError as e:
             if "already been registered" in str(e):
                 print("⚠️ SQLAlchemy already registered, using existing instance")
             else:
-                raise e
+                print(f"❌ SQLAlchemy初期化エラー: {e}")
+                return False
         
         # データベーステーブルを作成
         with app.app_context():
-            db.create_all()
-            print("✅ データベースを初期化しました")
+            try:
+                # データベース接続テスト
+                from sqlalchemy import text
+                db.session.execute(text('SELECT 1'))
+                print("✅ データベース接続テストに成功")
+                
+                # テーブル作成
+                db.create_all()
+                print("✅ データベーステーブルを作成しました")
+                
+            except Exception as e:
+                print(f"❌ データベーステーブル作成エラー: {e}")
+                return False
             
         DB_INITIALIZED = True
+        print("✅ データベース初期化完了")
         return True
         
     except Exception as e:
-        print(f"⚠️ データベース初期化に失敗: {e}")
+        print(f"❌ データベース初期化に失敗: {e}")
+        import traceback
+        traceback.print_exc()
         DB_INITIALIZED = False
         return False
 
@@ -131,20 +161,42 @@ def load_questions():
 
 @app.route('/health')
 def health_check():
-    return jsonify({
-        "status": "healthy", 
-        "timestamp": datetime.utcnow().isoformat(),
-        "database": DB_INITIALIZED
-    })
+    try:
+        db_status = "disconnected"
+        if DB_INITIALIZED and db:
+            # データベース接続テスト
+            try:
+                from sqlalchemy import text
+                db.session.execute(text('SELECT 1'))
+                db_status = "connected"
+            except:
+                db_status = "error"
+        
+        return jsonify({
+            "status": "healthy", 
+            "timestamp": datetime.utcnow().isoformat(),
+            "database": db_status,
+            "environment": os.environ.get('FLASK_ENV', 'development')
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "database": "error"
+        }), 500
 
-# 起動時初期化
-init_database()
+# アプリケーション起動時に初期化
+with app.app_context():
+    init_database()
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # データベースが初期化されていない場合は再試行
     if not DB_INITIALIZED:
-        flash('データベース接続中です。しばらくお待ちください。', 'warning')
-        return redirect(url_for('index'))
+        init_success = init_database()
+        if not init_success:
+            flash('データベース接続中です。しばらくお待ちください。', 'warning')
+            return render_template('auth/login.html', form=None, db_error=True)
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
@@ -173,9 +225,12 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    # データベースが初期化されていない場合は再試行
     if not DB_INITIALIZED:
-        flash('データベース接続中です。しばらくお待ちください。', 'warning')
-        return redirect(url_for('index'))
+        init_success = init_database()
+        if not init_success:
+            flash('データベース接続中です。しばらくお待ちください。', 'warning')
+            return render_template('auth/register.html', form=None, db_error=True)
         
     if current_user.is_authenticated:
         return redirect(url_for('index'))
