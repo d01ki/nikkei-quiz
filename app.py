@@ -1,13 +1,85 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 import json
 import random
 import os
 from datetime import datetime
+import sys
 
+# Flask アプリケーション作成
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
 
-# サンプル問題データ（data/questions.jsonがない場合のフォールバック）
+# 設定
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
+
+# SQLiteデータベース設定（PostgreSQLを使用しない）
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+print("✅ SQLiteデータベースを使用します")
+
+# モジュールのインポートと初期化
+try:
+    import models
+    import forms
+    print("✅ モジュールのインポートに成功")
+    
+    # グローバル変数に代入
+    db = models.db
+    User = models.User
+    QuizResult = models.QuizResult
+    UserStats = models.UserStats
+    LoginForm = forms.LoginForm
+    RegisterForm = forms.RegisterForm
+    
+    # SQLAlchemyの初期化
+    db.init_app(app)
+    print("✅ SQLAlchemyの初期化に成功")
+    
+    # データベーステーブルを作成
+    with app.app_context():
+        db.create_all()
+        print("✅ データベーステーブルを作成しました")
+    
+    DB_INITIALIZED = True
+    print("✅ データベース初期化完了")
+    
+except Exception as e:
+    print(f"❌ データベース初期化に失敗: {e}")
+    import traceback
+    traceback.print_exc()
+    DB_INITIALIZED = False
+    db = None
+    User = None
+    QuizResult = None
+    UserStats = None
+    LoginForm = None
+    RegisterForm = None
+
+# Flask-Loginの初期化
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+
+# user_loader
+@login_manager.user_loader
+def load_user(user_id):
+    if User and DB_INITIALIZED:
+        try:
+            return User.query.get(int(user_id))
+        except:
+            return None
+    return None
+
+# テンプレート用のコンテキストプロセッサ
+@app.context_processor
+def inject_global_vars():
+    return {
+        'db_available': DB_INITIALIZED,
+        'current_user': current_user
+    }
+
+# サンプル問題データ
 SAMPLE_QUESTIONS = [
     {
         "id": "sample_001",
@@ -23,71 +95,10 @@ SAMPLE_QUESTIONS = [
         "explanation": "日経平均株価の最安値は終値では2009年の7054円98銭でした。東証プライム上場企業から選んだ225社の株価で算出する指数です。",
         "difficulty": "中級",
         "source": "日経TEST公式テキスト&問題集 2024-25年版"
-    },
-    {
-        "id": "sample_002",
-        "category": "実践知識",
-        "question": "最近のドラッグストア業界について、正しい記述はどれか。",
-        "options": [
-            "食品スーパーやコンビニから顧客を取り込み業績を伸ばした",
-            "全国の店舗数は2万店を目前に頭打ちになった",
-            "イオン系を除きプライベートブランド商品を発売していない",
-            "総合商社も加わった業界再編で大きく3陣営に分かれている"
-        ],
-        "correct_answer": 0,
-        "explanation": "ドラッグストアは粗利の高い医薬品で収益を確保し、食品や日用品を安く売るビジネスモデルで成長しました。競合してスーパーが閉店するケースも目立っています。",
-        "difficulty": "中級",
-        "source": "日経TEST公式テキスト&問題集 2024-25年版"
-    },
-    {
-        "id": "sample_003",
-        "category": "視野の広さ",
-        "question": "金の国際相場の取引単位となる1トロイオンスは約何グラムか。",
-        "options": [
-            "10グラム",
-            "30グラム",
-            "100グラム",
-            "150グラム"
-        ],
-        "correct_answer": 1,
-        "explanation": "正確には1トロイオンス＝31.1035グラムです。金は有史以来採掘された総量が約20万トン、五輪の水泳競技で使う国際基準プール約4杯分とよくいわれます。",
-        "difficulty": "初級",
-        "source": "日経TEST公式テキスト&問題集 2024-25年版"
-    },
-    {
-        "id": "sample_004",
-        "category": "知識を知恵にする力",
-        "question": "生成AI（人工知能）が強みを発揮する分野として、ふさわしくないと考えられるのはどれか。",
-        "options": [
-            "カスタマーサポートの負荷軽減",
-            "膨大なデータに基づく事実確認",
-            "文章の要約や正確な多言語翻訳",
-            "新製品やサービスの紹介文作成"
-        ],
-        "correct_answer": 1,
-        "explanation": "生成AIはハルシネーション（幻覚）と呼ばれる『もっともらしいが事実と異なる内容』を答えることが多くなります。日進月歩の技術ですが、『事実確認』はまだふさわしくないと考えられます。",
-        "difficulty": "中級",
-        "source": "日経TEST公式テキスト&問題集 2024-25年版"
-    },
-    {
-        "id": "sample_005",
-        "category": "知恵を活用する力",
-        "question": "株式を上場する企業が非上場化する、経営陣が参加する買収（MBO）について、間違っている記述はどれか。",
-        "options": [
-            "他社からの企業買収の防衛策としても活用される",
-            "非上場化した後に再上場することはできない",
-            "中長期の視点で改革に取り組むことができる",
-            "投資ファンドや銀行が関与する事例が多い"
-        ],
-        "correct_answer": 1,
-        "explanation": "上場廃止後に再上場する道もあり、外食のすかいらーくホールディングスや、米国ではパソコンのデル・テクノロジーズなどの事例があります。",
-        "difficulty": "上級",
-        "source": "日経TEST公式テキスト&問題集 2024-25年版"
     }
 ]
 
 def load_questions():
-    """問題データを読み込む関数"""
     try:
         if os.path.exists('data/questions.json'):
             with open('data/questions.json', 'r', encoding='utf-8') as f:
@@ -95,8 +106,6 @@ def load_questions():
                 if questions and len(questions) > 0:
                     print(f"✅ 問題データを読み込みました: {len(questions)}問")
                     return questions
-                else:
-                    print("⚠️ 問題データが空です。サンプルデータを使用します")
         else:
             print("⚠️ data/questions.jsonが見つかりません。サンプルデータを使用します")
     except Exception as e:
@@ -105,52 +114,147 @@ def load_questions():
     print(f"📚 サンプル問題データを使用します: {len(SAMPLE_QUESTIONS)}問")
     return SAMPLE_QUESTIONS
 
-def save_user_stats(user_stats):
-    """ユーザー統計を保存する関数"""
+@app.route('/health')
+def health_check():
     try:
-        if not os.path.exists('data'):
-            os.makedirs('data')
-        with open('data/user_stats.json', 'w', encoding='utf-8') as f:
-            json.dump(user_stats, f, ensure_ascii=False, indent=2)
+        db_status = "disconnected"
+        error_detail = None
+        
+        if DB_INITIALIZED and db:
+            try:
+                from sqlalchemy import text
+                with app.app_context():
+                    db.session.execute(text('SELECT 1'))
+                    db_status = "connected"
+            except Exception as e:
+                db_status = "error"
+                error_detail = str(e)
+        
+        return jsonify({
+            "status": "healthy", 
+            "timestamp": datetime.utcnow().isoformat(),
+            "database": db_status,
+            "database_error": error_detail,
+            "database_type": "SQLite",
+            "environment": os.environ.get('FLASK_ENV', 'development'),
+            "db_initialized": DB_INITIALIZED
+        })
     except Exception as e:
-        print(f"❌ 統計保存エラー: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "database": "error"
+        }), 500
 
-def load_user_stats():
-    """ユーザー統計を読み込む関数"""
-    try:
-        if os.path.exists('data/user_stats.json'):
-            with open('data/user_stats.json', 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"❌ 統計読み込みエラー: {e}")
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if not DB_INITIALIZED:
+        return render_template('error.html', 
+                             message='データベース接続エラー', 
+                             details='データベースが初期化されていません。')
+        
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
     
-    return {
-        'total_questions': 0,
-        'correct_answers': 0,
-        'categories': {},
-        'history': [],
-        'start_date': datetime.now().isoformat()
-    }
+    form = LoginForm()
+    if form.validate_on_submit():
+        try:
+            user = User.query.filter(
+                (User.username == form.username.data) | (User.email == form.username.data)
+            ).first()
+            
+            if user and user.check_password(form.password.data):
+                login_user(user, remember=form.remember_me.data)
+                user.update_last_login()
+                flash(f'ようこそ、{user.display_name or user.username}さん！', 'success')
+                
+                next_page = request.args.get('next')
+                return redirect(next_page) if next_page else redirect(url_for('index'))
+            else:
+                flash('ユーザー名またはパスワードが間違っています。', 'error')
+        except Exception as e:
+            print(f"Login error: {e}")
+            flash('ログイン処理中にエラーが発生しました。', 'error')
+    
+    return render_template('auth/login.html', form=form)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if not DB_INITIALIZED:
+        return render_template('error.html', 
+                             message='データベース接続エラー', 
+                             details='データベースが初期化されていません。')
+        
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    form = RegisterForm()
+    if form.validate_on_submit():
+        try:
+            user = User(
+                username=form.username.data,
+                email=form.email.data,
+                display_name=form.display_name.data or form.username.data
+            )
+            user.set_password(form.password.data)
+            
+            db.session.add(user)
+            db.session.commit()
+            
+            stats = UserStats(user_id=user.id)
+            db.session.add(stats)
+            db.session.commit()
+            
+            flash('登録が完了しました！ログインしてください。', 'success')
+            return redirect(url_for('login'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash('登録中にエラーが発生しました。再度お試しください。', 'error')
+            print(f"Registration error: {e}")
+    
+    return render_template('auth/register.html', form=form)
+
+@app.route('/logout')
+def logout():
+    if DB_INITIALIZED and current_user.is_authenticated:
+        logout_user()
+        flash('ログアウトしました。', 'info')
+    return redirect(url_for('index'))
 
 @app.route('/')
 def index():
-    """ホームページ"""
     try:
-        stats = load_user_stats()
+        if DB_INITIALIZED and current_user.is_authenticated:
+            stats_obj = current_user.get_stats()
+            stats = stats_obj.to_dict()
+            results = QuizResult.query.filter_by(user_id=current_user.id).order_by(QuizResult.timestamp.desc()).limit(5).all()
+            stats['recent_history'] = [{
+                'question': result.question_text,
+                'category': result.category,
+                'is_correct': result.is_correct,
+                'timestamp': result.timestamp.isoformat()
+            } for result in results]
+        else:
+            stats = {
+                'total_questions': 0,
+                'correct_answers': 0,
+                'categories': {},
+                'recent_history': []
+            }
+        
         return render_template('index.html', stats=stats)
     except Exception as e:
         print(f"❌ ホームページエラー: {e}")
-        return render_template('error.html', message='ホームページの読み込みに失敗しました')
+        return render_template('index.html', stats={'total_questions': 0, 'correct_answers': 0, 'categories': {}, 'recent_history': []})
 
 @app.route('/quiz')
 def quiz():
-    """クイズページ"""
     try:
         questions = load_questions()
         if not questions:
             return render_template('error.html', message='問題データが見つかりません')
         
-        # セッションをクリア
         session.clear()
         return render_template('quiz.html')
     except Exception as e:
@@ -159,9 +263,17 @@ def quiz():
 
 @app.route('/dashboard')
 def dashboard():
-    """ダッシュボードページ"""
+    if not DB_INITIALIZED:
+        flash('データベース接続中です。', 'warning')
+        return redirect(url_for('index'))
+        
+    if not current_user.is_authenticated:
+        flash('ログインが必要です。', 'warning')
+        return redirect(url_for('login'))
+        
     try:
-        stats = load_user_stats()
+        stats_obj = current_user.get_stats()
+        stats = stats_obj.to_dict()
         return render_template('dashboard.html', stats=stats)
     except Exception as e:
         print(f"❌ ダッシュボードエラー: {e}")
@@ -169,9 +281,31 @@ def dashboard():
 
 @app.route('/history')
 def history():
-    """履歴ページ"""
+    if not DB_INITIALIZED:
+        flash('データベース接続中です。', 'warning')
+        return redirect(url_for('index'))
+        
+    if not current_user.is_authenticated:
+        flash('ログインが必要です。', 'warning')
+        return redirect(url_for('login'))
+        
     try:
-        stats = load_user_stats()
+        stats_obj = current_user.get_stats()
+        stats = stats_obj.to_dict()
+        
+        results = QuizResult.query.filter_by(user_id=current_user.id).order_by(QuizResult.timestamp.desc()).all()
+        stats['history'] = [{
+            'question_id': result.question_id,
+            'question': result.question_text,
+            'category': result.category,
+            'user_answer': result.user_answer,
+            'correct_answer': result.correct_answer,
+            'options': result.get_options(),
+            'explanation': result.explanation,
+            'is_correct': result.is_correct,
+            'timestamp': result.timestamp.isoformat()
+        } for result in results]
+        
         return render_template('history.html', stats=stats)
     except Exception as e:
         print(f"❌ 履歴ページエラー: {e}")
@@ -179,21 +313,15 @@ def history():
 
 @app.route('/api/get_question')
 def get_question():
-    """ランダムな問題を取得"""
     try:
         questions = load_questions()
-        print(f"📝 利用可能な問題数: {len(questions)}")
         
         if not questions:
             return jsonify({'error': '問題データがありません'}), 404
         
         question = random.choice(questions)
-        print(f"🎯 選択された問題: {question['id']} - {question['category']}")
-        
-        # セッションに現在の問題を保存
         session['current_question'] = question
         
-        # 正解を除いて返す
         return jsonify({
             'id': question['id'],
             'category': question['category'],
@@ -208,53 +336,45 @@ def get_question():
 
 @app.route('/api/submit_answer', methods=['POST'])
 def submit_answer():
-    """回答を送信"""
     try:
         data = request.json
         if not data or 'answer' not in data:
             return jsonify({'error': '回答データが不正です'}), 400
             
         user_answer = data.get('answer')
-        
         current_question = session.get('current_question')
+        
         if not current_question:
             return jsonify({'error': '問題が見つかりません'}), 400
         
         correct_answer = current_question['correct_answer']
         is_correct = user_answer == correct_answer
         
-        print(f"📊 回答結果 - ユーザー: {user_answer}, 正解: {correct_answer}, 結果: {'✅' if is_correct else '❌'}")
-        
-        # 統計を更新
-        stats = load_user_stats()
-        stats['total_questions'] += 1
-        if is_correct:
-            stats['correct_answers'] += 1
-        
-        # カテゴリ別統計
-        category = current_question['category']
-        if category not in stats['categories']:
-            stats['categories'][category] = {'total': 0, 'correct': 0}
-        stats['categories'][category]['total'] += 1
-        if is_correct:
-            stats['categories'][category]['correct'] += 1
-        
-        # 履歴に追加
-        stats['history'].append({
-            'question_id': current_question['id'],
-            'question': current_question['question'],
-            'category': category,
-            'user_answer': user_answer,
-            'correct_answer': correct_answer,
-            'options': current_question['options'],
-            'explanation': current_question.get('explanation', ''),
-            'is_correct': is_correct,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-        # 最近50件のみ保持
-        stats['history'] = stats['history'][-50:]
-        save_user_stats(stats)
+        if DB_INITIALIZED and current_user.is_authenticated:
+            try:
+                result = QuizResult(
+                    user_id=current_user.id,
+                    question_id=current_question['id'],
+                    question_text=current_question['question'],
+                    category=current_question['category'],
+                    user_answer=user_answer,
+                    correct_answer=correct_answer,
+                    is_correct=is_correct,
+                    explanation=current_question.get('explanation', ''),
+                    difficulty=current_question.get('difficulty', '中級')
+                )
+                result.set_options(current_question['options'])
+                
+                db.session.add(result)
+                
+                stats = current_user.get_stats()
+                stats.update_stats(current_question['category'], is_correct)
+                
+                db.session.commit()
+            except Exception as e:
+                print(f"データベース保存エラー: {e}")
+                if db:
+                    db.session.rollback()
         
         return jsonify({
             'correct': is_correct,
@@ -269,22 +389,26 @@ def submit_answer():
 
 @app.route('/api/stats', methods=['GET', 'DELETE'])
 def handle_stats():
-    """統計データの取得・削除"""
+    if not DB_INITIALIZED or not current_user.is_authenticated:
+        return jsonify({'error': '認証が必要です'}), 401
+        
     try:
         if request.method == 'GET':
-            return jsonify(load_user_stats())
+            stats_obj = current_user.get_stats()
+            return jsonify(stats_obj.to_dict())
         
         elif request.method == 'DELETE':
-            default_stats = {
-                'total_questions': 0,
-                'correct_answers': 0,
-                'categories': {},
-                'history': [],
-                'start_date': datetime.now().isoformat()
-            }
-            save_user_stats(default_stats)
+            QuizResult.query.filter_by(user_id=current_user.id).delete()
+            stats = current_user.get_stats()
+            stats.total_questions = 0
+            stats.correct_answers = 0
+            stats.set_categories({})
+            db.session.commit()
+            
             return jsonify({'message': '統計をリセットしました'})
     except Exception as e:
+        if db:
+            db.session.rollback()
         print(f"❌ handle_stats エラー: {e}")
         return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
 
@@ -297,10 +421,20 @@ def internal_error(error):
     return render_template('error.html', message='内部サーバーエラーが発生しました'), 500
 
 if __name__ == '__main__':
-    print("🚀 日経テスト練習アプリを起動中...")
-    print("📂 データファイル状況:")
-    print(f"   - data/questions.json: {'✅ 存在' if os.path.exists('data/questions.json') else '❌ 不存在'}")
-    print(f"   - data ディレクトリ: {'✅ 存在' if os.path.exists('data') else '❌ 不存在'}")
+    print("🚀 日経テスト練習アプリ（認証版）を起動中...")
+    
+    if DB_INITIALIZED:
+        print("📂 機能:")
+        print("   - ✅ ユーザー登録・ログイン")
+        print("   - ✅ SQLite対応")
+        print("   - ✅ セキュアなパスワードハッシュ化")
+        print("   - ✅ 個人別統計管理")
+    else:
+        print("⚠️ データベース機能が無効です（基本機能のみ）")
+        print("📂 利用可能機能:")
+        print("   - ✅ 問題解答（統計なし）")
+        print("   - ❌ ユーザー登録・ログイン")
+    
     print("")
     print("🌐 アクセス方法:")
     print("   - ローカル: http://localhost:5000")
@@ -309,7 +443,6 @@ if __name__ == '__main__':
     print("⏹️ 停止するには Ctrl+C を押してください")
     print("=" * 50)
     
-    # 本番環境での設定
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') != 'production'
     
