@@ -27,7 +27,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_recycle': 300,
 }
 
-# データベース関連のインポートを遅延させる
+# グローバル変数
 db = None
 User = None
 QuizResult = None
@@ -37,36 +37,40 @@ RegisterForm = None
 login_manager = None
 DB_INITIALIZED = False
 
-# Flask-Loginの初期設定（エラー回避のため）
+# Flask-Loginの初期設定
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
 
-# ダミーのuser_loaderを設定（後で上書きされます）
+# ダミーのuser_loaderを設定
 @login_manager.user_loader
 def load_user_dummy(user_id):
     return None
 
 def init_database():
     """データベース関連の初期化を遅延実行"""
-    global db, User, QuizResult, UserStats, LoginForm, RegisterForm, login_manager, DB_INITIALIZED
+    global db, User, QuizResult, UserStats, LoginForm, RegisterForm, DB_INITIALIZED
     
     if DB_INITIALIZED:
         return True
         
     try:
-        from models import db as _db, User as _User, QuizResult as _QuizResult, UserStats as _UserStats
+        # models.pyから既存のdbインスタンスをインポート
+        from models import db as existing_db, User as _User, QuizResult as _QuizResult, UserStats as _UserStats
         from forms import LoginForm as _LoginForm, RegisterForm as _RegisterForm
         
-        db = _db
+        # 既存のdbインスタンスを使用（重複登録を回避）
+        db = existing_db
         User = _User
         QuizResult = _QuizResult
         UserStats = _UserStats
         LoginForm = _LoginForm
         RegisterForm = _RegisterForm
         
-        db.init_app(app)
+        # アプリがまだ初期化されていない場合のみ初期化
+        if not hasattr(db, 'app') or db.app is None:
+            db.init_app(app)
         
         # 実際のuser_loaderで上書き
         @login_manager.user_loader
@@ -174,17 +178,20 @@ def health_check():
         "python_version": os.sys.version
     })
 
-# データベース初期化を最初のリクエストで実行
-@app.before_request
-def before_request():
-    """リクエスト前の処理"""
-    if not DB_INITIALIZED:
-        init_database()
+# 起動時に1回だけデータベース初期化を実行
+@app.before_first_request
+def initialize_app():
+    """アプリケーション初期化（最初のリクエスト時のみ）"""
+    init_database()
 
 # 認証ルート
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """ログイン"""
+    # 初期化されていない場合は今すぐ初期化を試行
+    if not DB_INITIALIZED:
+        init_database()
+    
     if not DB_INITIALIZED:
         flash('システムメンテナンス中です。しばらくお待ちください。', 'warning')
         return redirect(url_for('index'))
@@ -217,6 +224,10 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """ユーザー登録"""
+    # 初期化されていない場合は今すぐ初期化を試行
+    if not DB_INITIALIZED:
+        init_database()
+    
     if not DB_INITIALIZED:
         flash('システムメンテナンス中です。しばらくお待ちください。', 'warning')
         return redirect(url_for('index'))
