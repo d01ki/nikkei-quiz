@@ -4,30 +4,49 @@ import json
 import random
 import os
 from datetime import datetime
-from models import db, User, QuizResult, UserStats
-from forms import LoginForm, RegisterForm
+
+# データベース関連のインポートをtry-catchで保護
+try:
+    from models import db, User, QuizResult, UserStats
+    from forms import LoginForm, RegisterForm
+    DB_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ データベース関連のインポートに失敗: {e}")
+    DB_AVAILABLE = False
 
 app = Flask(__name__)
 
 # 設定
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'nikkei_quiz_secret_key_2024')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///quiz.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# PostgreSQL URLの修正（RenderやHerokuの場合）
-if app.config['SQLALCHEMY_DATABASE_URI'] and app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
+# データベース設定
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # PostgreSQL URLの修正（RenderやHerokuの場合）
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    # ローカル環境の場合はSQLite
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///quiz.db'
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
 
 # 初期化
-db.init_app(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
+if DB_AVAILABLE:
+    db.init_app(app)
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = 'login'
+    login_manager.login_message = 'このページにアクセスするにはログインが必要です。'
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+    @login_manager.user_loader
+    def load_user(user_id):
+        return User.query.get(int(user_id))
 
 # サンプル問題データ（既存のものを保持）
 SAMPLE_QUESTIONS = [
@@ -131,32 +150,44 @@ def load_questions():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """ログイン"""
+    if not DB_AVAILABLE:
+        flash('データベースが利用できません。', 'error')
+        return redirect(url_for('index'))
+        
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     
     form = LoginForm()
     if form.validate_on_submit():
-        # ユーザー名またはメールアドレスでユーザーを検索
-        user = User.query.filter(
-            (User.username == form.username.data) | (User.email == form.username.data)
-        ).first()
-        
-        if user and user.check_password(form.password.data):
-            login_user(user, remember=form.remember_me.data)
-            user.update_last_login()
-            flash(f'ようこそ、{user.display_name or user.username}さん！', 'success')
+        try:
+            # ユーザー名またはメールアドレスでユーザーを検索
+            user = User.query.filter(
+                (User.username == form.username.data) | (User.email == form.username.data)
+            ).first()
             
-            # リダイレクト先の処理
-            next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('index'))
-        else:
-            flash('ユーザー名またはパスワードが間違っています。', 'error')
+            if user and user.check_password(form.password.data):
+                login_user(user, remember=form.remember_me.data)
+                user.update_last_login()
+                flash(f'ようこそ、{user.display_name or user.username}さん！', 'success')
+                
+                # リダイレクト先の処理
+                next_page = request.args.get('next')
+                return redirect(next_page) if next_page else redirect(url_for('index'))
+            else:
+                flash('ユーザー名またはパスワードが間違っています。', 'error')
+        except Exception as e:
+            print(f"Login error: {e}")
+            flash('ログイン処理中にエラーが発生しました。', 'error')
     
     return render_template('auth/login.html', form=form)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """ユーザー登録"""
+    if not DB_AVAILABLE:
+        flash('データベースが利用できません。', 'error')
+        return redirect(url_for('index'))
+        
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     
@@ -201,7 +232,7 @@ def logout():
 def index():
     """ホームページ"""
     try:
-        if current_user.is_authenticated:
+        if DB_AVAILABLE and current_user.is_authenticated:
             stats_obj = current_user.get_stats()
             stats = stats_obj.to_dict()
             # 履歴を追加
@@ -229,6 +260,10 @@ def index():
 @login_required
 def quiz():
     """クイズページ"""
+    if not DB_AVAILABLE:
+        flash('データベースが利用できません。', 'error')
+        return redirect(url_for('index'))
+        
     try:
         questions = load_questions()
         if not questions:
@@ -245,6 +280,10 @@ def quiz():
 @login_required
 def dashboard():
     """ダッシュボードページ"""
+    if not DB_AVAILABLE:
+        flash('データベースが利用できません。', 'error')
+        return redirect(url_for('index'))
+        
     try:
         stats_obj = current_user.get_stats()
         stats = stats_obj.to_dict()
@@ -257,6 +296,10 @@ def dashboard():
 @login_required
 def history():
     """履歴ページ"""
+    if not DB_AVAILABLE:
+        flash('データベースが利用できません。', 'error')
+        return redirect(url_for('index'))
+        
     try:
         stats_obj = current_user.get_stats()
         stats = stats_obj.to_dict()
@@ -315,6 +358,9 @@ def get_question():
 @login_required
 def submit_answer():
     """回答を送信"""
+    if not DB_AVAILABLE:
+        return jsonify({'error': 'データベースが利用できません'}), 500
+        
     try:
         data = request.json
         if not data or 'answer' not in data:
@@ -361,7 +407,8 @@ def submit_answer():
         })
         
     except Exception as e:
-        db.session.rollback()
+        if DB_AVAILABLE:
+            db.session.rollback()
         print(f"❌ submit_answer エラー: {e}")
         return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
 
@@ -369,6 +416,9 @@ def submit_answer():
 @login_required
 def handle_stats():
     """統計データの取得・削除"""
+    if not DB_AVAILABLE:
+        return jsonify({'error': 'データベースが利用できません'}), 500
+        
     try:
         if request.method == 'GET':
             stats_obj = current_user.get_stats()
@@ -385,7 +435,8 @@ def handle_stats():
             
             return jsonify({'message': '統計をリセットしました'})
     except Exception as e:
-        db.session.rollback()
+        if DB_AVAILABLE:
+            db.session.rollback()
         print(f"❌ handle_stats エラー: {e}")
         return jsonify({'error': f'サーバーエラー: {str(e)}'}), 500
 
@@ -400,6 +451,10 @@ def internal_error(error):
 # データベース初期化
 def init_db():
     """データベースを初期化"""
+    if not DB_AVAILABLE:
+        print("⚠️ データベース機能が無効です")
+        return
+        
     try:
         with app.app_context():
             db.create_all()
@@ -413,11 +468,15 @@ if __name__ == '__main__':
     # データベース初期化
     init_db()
     
-    print("📂 機能:")
-    print("   - ✅ ユーザー登録・ログイン")
-    print("   - ✅ PostgreSQL対応")
-    print("   - ✅ セキュアなパスワードハッシュ化")
-    print("   - ✅ 個人別統計管理")
+    if DB_AVAILABLE:
+        print("📂 機能:")
+        print("   - ✅ ユーザー登録・ログイン")
+        print("   - ✅ PostgreSQL対応")
+        print("   - ✅ セキュアなパスワードハッシュ化")
+        print("   - ✅ 個人別統計管理")
+    else:
+        print("⚠️ データベース機能が無効です")
+    
     print("")
     print("🌐 アクセス方法:")
     print("   - ローカル: http://localhost:5000")
